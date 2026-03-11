@@ -9,11 +9,11 @@
   <title>Gestor Financiero Personal</title>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     const cfg={apiKey:"AIzaSyALBFWmnSTsPlYi8TA_6Q_CvUzu-5kOkaY",authDomain:"myfin-mk2.firebaseapp.com",projectId:"myfin-mk2",storageBucket:"myfin-mk2.firebasestorage.app",messagingSenderId:"371858436203",appId:"1:371858436203:web:8073719516fd9fa3a8012e"};
     const app=initializeApp(cfg);const db=getFirestore(app);const auth=getAuth(app);
-    db._doc=doc;db._getDoc=getDoc;db._setDoc=setDoc;
+    db._doc=doc;db._getDoc=getDoc;db._setDoc=setDoc;db._collection=collection;db._getDocs=getDocs;
     window._db=db;window._auth=auth;
     window._signIn=(e,p)=>signInWithEmailAndPassword(auth,e,p);
     window._signUp=(e,p)=>createUserWithEmailAndPassword(auth,e,p);
@@ -130,8 +130,70 @@ const genMonths=()=>{const l=[];for(let y=2026;y<=2028;y++){const s=y===2026?1:0
 
 // ── FIREBASE ──────────────────────────────────────────────────────────────────
 const waitFS=()=>new Promise(r=>{if(window._fsReady)return r();window.addEventListener('fsReady',r,{once:true});setTimeout(r,6000)});
-const dbLoad=async(uid,key,fb)=>{try{await waitFS();const db=window._db;if(!db)return fb;const s=await db._getDoc(db._doc(db,`users/${uid}/data`,key));return s.exists()?s.data().v:fb;}catch{return fb}};
-const dbSave=async(uid,key,val)=>{try{await waitFS();const db=window._db;if(!db)return;await db._setDoc(db._doc(db,`users/${uid}/data`,key),{v:val});}catch(e){console.error(e)}};
+
+const dbLoad=async(uid,key,fb)=>{
+  try{
+    await waitFS();
+    const db=window._db;
+    if(!db)return fb;
+    const s=await db._getDoc(db._doc(db,`users/${uid}/data`,key));
+    return s.exists()?s.data().v:fb;
+  }catch{return fb}
+};
+
+const dbSave=async(uid,key,val)=>{
+  try{
+    await waitFS();
+    const db=window._db;
+    if(!db)return;
+    await db._setDoc(db._doc(db,`users/${uid}/data`,key),{v:val});
+  }catch(e){console.error(e)}
+};
+
+// ── MIGRATION: old /finanzas -> users/{uid}/data ──────────────────────────────
+const migrateOldData=async(uid)=>{
+  try{
+    await waitFS();
+    const db=window._db;
+    if(!db)return false;
+
+    // Check if migration already done
+    const migrated=await db._getDoc(db._doc(db,`users/${uid}/data`,'_migrated'));
+    if(migrated.exists())return false;
+
+    // Check if old data exists at /finanzas
+    const oldKeys=['accs','cats','exps','dist','savs','goals','invs','mlist','theme','currency','exRate'];
+    const oldRef=(key)=>db._doc(db,'finanzas',key);
+
+    let didMigrate=false;
+    for(const key of oldKeys){
+      const snap=await db._getDoc(oldRef(key));
+      if(snap.exists()){
+        const data=snap.data();
+        // Old data might be stored as {v: ...} or directly as the value
+        const val=data.v!==undefined?data.v:data;
+        // Normalize balanceGBP for accs
+        if(key==='accs'&&Array.isArray(val)){
+          const normalized=val.map(a=>({
+            ...a,
+            balanceGBP:a.balanceGBP!==undefined?a.balanceGBP:(a.balance||0)
+          }));
+          await dbSave(uid,key,normalized);
+        } else {
+          await dbSave(uid,key,val);
+        }
+        didMigrate=true;
+      }
+    }
+
+    // Mark migration as done so it never runs again
+    await db._setDoc(db._doc(db,`users/${uid}/data`,'_migrated'),{v:true,ts:Date.now()});
+    return didMigrate;
+  }catch(e){
+    console.error('Migration error:',e);
+    return false;
+  }
+};
 
 // ── ICONS ─────────────────────────────────────────────────────────────────────
 const Ic=({d,s=22,w=2,c})=><svg width={s} height={s} fill="none" stroke={c||'currentColor'} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={w} d={d}/></svg>;
@@ -201,10 +263,11 @@ const App=()=>{
   const [user,setUser]=useState(undefined);
   const [view,setView]=useState('home');
   const [ld,setLd]=useState(true);
+  const [migrating,setMigrating]=useState(false);
   const [sync,setSync]=useState(false);
   const [themeName,setThemeName]=useState('midnight');
-  const [currency,setCurrency]=useState('GBP'); // 'GBP' or 'EUR'
-  const [exRate,setExRate]=useState(1.17); // GBP->EUR rate
+  const [currency,setCurrency]=useState('GBP');
+  const [exRate,setExRate]=useState(1.17);
   const theme=THEMES[themeName]||THEMES.midnight;
 
   const [dist,setDist]=useState(DEF_DIST);
@@ -223,15 +286,34 @@ const App=()=>{
     const uid=user.uid;
     (async()=>{
       setLd(true);
+
+      // Run migration first (only runs once per user ever)
+      setMigrating(true);
+      await migrateOldData(uid);
+      setMigrating(false);
+
+      // Now load from users/{uid}/data
       const [d,a,sv,c,e,g,iv,ml,tn,cu,er]=await Promise.all([
         dbLoad(uid,'dist',null),dbLoad(uid,'accs',null),dbLoad(uid,'savs',[]),
         dbLoad(uid,'cats',null),dbLoad(uid,'exps',[]),dbLoad(uid,'goals',null),
         dbLoad(uid,'invs',[]),dbLoad(uid,'mlist',null),
         dbLoad(uid,'theme','midnight'),dbLoad(uid,'currency','GBP'),dbLoad(uid,'exRate',1.17),
       ]);
-      if(d)setDist(d);if(a)setAccs(a);if(sv)setSavs(sv);if(c)setCats(c);
-      if(e)setExps(e);if(g)setGoals(g);if(iv)setInvs(iv);if(ml)setMlist(ml);
-      if(tn)setThemeName(tn);if(cu)setCurrency(cu);if(er)setExRate(er);
+      if(d)setDist(d);
+      if(a){
+        // Normalize balanceGBP in case any old records slipped through
+        const normalized=a.map(acc=>({...acc,balanceGBP:acc.balanceGBP!==undefined?acc.balanceGBP:(acc.balance||0)}));
+        setAccs(normalized);
+      }
+      if(sv)setSavs(sv);
+      if(c)setCats(c);
+      if(e)setExps(e);
+      if(g)setGoals(g);
+      if(iv)setInvs(iv);
+      if(ml)setMlist(ml);
+      if(tn)setThemeName(tn);
+      if(cu)setCurrency(cu);
+      if(er)setExRate(er);
       setLd(false);
     })();
   },[user]);
@@ -250,7 +332,6 @@ const App=()=>{
   const uCurrency=v=>{setCurrency(v);sy('currency',v)};
   const uExRate=v=>{setExRate(v);sy('exRate',v)};
 
-  // Convert amount: stored as GBP, display in chosen currency
   const fmt=(gbp)=>{
     if(currency==='EUR'){const e=gbp*exRate;return `€${e.toFixed(2)}`;}
     return `£${gbp.toFixed(2)}`;
@@ -262,7 +343,6 @@ const App=()=>{
   const totBal=accs.reduce((s,a)=>s+(a.balanceGBP||a.balance||0),0);
   const totSav=accs.filter(a=>a.type==='savings').reduce((s,a)=>s+(a.balanceGBP||a.balance||0),0);
 
-  // Apply theme to body
   useEffect(()=>{
     document.body.style.background=theme.bg;
     document.body.style.color=theme.text;
@@ -270,6 +350,7 @@ const App=()=>{
 
   if(user===undefined)return<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#0f1117'}}><Spin/></div>;
   if(!user)return<Login/>;
+  if(migrating)return<div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,background:theme.bg}}><Spin c={theme.accent}/><p style={{color:theme.text3,fontSize:14,margin:0}}>Migrando tus datos...</p></div>;
   if(ld)return<div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,background:theme.bg}}><Spin c={theme.accent}/><p style={{color:theme.text3,fontSize:14,margin:0}}>Cargando tus datos...</p></div>;
 
   const sp={theme,dist,uDist,accs,uAccs,savs,uSavs,cats,uCats,exps,uExps,goals,uGoals,invs,uInvs,mlist,uMlist,totBal,totSav,setView,fmt,fmtN,sym,toGBP,currency,uCurrency,exRate,uExRate,themeName,uTheme};
@@ -589,7 +670,7 @@ const ExpsV=({cats,uCats,exps,uExps,mlist,uMlist,fmt,fmtN,sym,toGBP,currency,the
   );
 };
 
-// ── STATS (line chart with dots) ──────────────────────────────────────────────
+// ── STATS ─────────────────────────────────────────────────────────────────────
 const StatsV=({cats,exps,totBal,totSav,mlist,fmt,fmtN,sym,theme})=>{
   const COLS=['#ff6b6b','#f59e0b','#22d3a5','#6c63ff','#ec4899','#8b5cf6','#10b981','#f97316'];
   const ct=cats.map(c=>({name:c.name,amt:exps.filter(e=>e.cid===c.id).reduce((s,e)=>s+(e.amountGBP||e.amount||0),0)})).filter(c=>c.amt>0);
@@ -597,7 +678,6 @@ const StatsV=({cats,exps,totBal,totSav,mlist,fmt,fmtN,sym,theme})=>{
   const mt=mlist.map(m=>({label:m.label.slice(0,6),tot:cats.reduce((s,c)=>{const e=exps.find(x=>x.cid===c.id&&x.mk===m.key);return s+(e?(e.amountGBP||e.amount||0):(c.def||0));},0)})).filter(m=>m.tot>0).slice(-8);
   const mx=Math.max(...mt.map(m=>m.tot),1);
 
-  // SVG line chart with dots
   const LineChart=()=>{
     if(mt.length<2)return null;
     const W=320,H=90,pad=10;
@@ -659,7 +739,7 @@ const StatsV=({cats,exps,totBal,totSav,mlist,fmt,fmtN,sym,theme})=>{
   );
 };
 
-// ── GOALS (multiple) ──────────────────────────────────────────────────────────
+// ── GOALS ─────────────────────────────────────────────────────────────────────
 const GOAL_COLORS=['#6c63ff','#22d3a5','#f59e0b','#ff6b6b','#ec4899','#38bdf8','#10b981','#f97316'];
 const GOAL_EMOJIS=['🎯','🏍️','🏠','✈️','💻','🚗','📱','💍','🎓','💰','🌴','🎸'];
 
@@ -934,9 +1014,9 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
             </div>
             <CL style={{padding:'12px 14px',marginBottom:10}}>
               {isLd?(<div style={{display:'flex',gap:8,alignItems:'center'}}><div className="sh" style={{width:80,height:24,backgroundImage:THEMES[Object.keys(THEMES)[0]].shimmer}}/><span style={{fontSize:12,color:theme.text3}}>Cargando...</span></div>)
-              :p?.error?(<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,color:theme.red}}>Error al cargar</span><button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4}}><RefIc/>Reintentar</button></div>)
+              :p?.error?(<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,color:theme.red}}>Error al cargar</span><button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:6}}><RefIc/>Reintentar</button></div>)
               :p?.price?(<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}><div><p style={{margin:'0 0 2px',fontSize:10,color:theme.text3}}>Precio actual</p><p style={{margin:0,fontSize:26,fontWeight:700,fontFamily:'DM Mono',color:theme.text}}>{sym2}{p.price?.toFixed(2)}</p></div><div style={{textAlign:'right'}}><p style={{margin:'0 0 4px',fontSize:10,color:theme.text3}}>Hoy</p><span style={{color:p.change>=0?theme.green:theme.red,fontFamily:'DM Mono',fontWeight:600,fontSize:13}}>{p.change>=0?'+':''}{sym2}{p.change?.toFixed(2)}</span></div></div>)
-              :(<button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4}}><RefIc/>Cargar precio</button>)}
+              :(<button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:6}}><RefIc/>Cargar precio</button>)}
             </CL>
             {pl!==null&&(
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
@@ -945,7 +1025,6 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
                 ))}
               </div>
             )}
-            {/* Range selector + chart */}
             <div style={{marginBottom:10}}>
               <div style={{display:'flex',gap:6,marginBottom:10}}>
                 {RANGES.map(r=>(
@@ -980,7 +1059,6 @@ const SettingsV=({themeName,uTheme,currency,uCurrency,exRate,uExRate,theme})=>{
     <div style={{paddingTop:8,display:'flex',flexDirection:'column',gap:16}}>
       <h2 style={{margin:0,fontSize:22,fontWeight:700,color:theme.text}}>Ajustes</h2>
 
-      {/* Currency */}
       <Card style={{padding:20}}>
         <h3 style={{margin:'0 0 14px',fontSize:15,fontWeight:600,color:theme.text}}>💱 Divisa</h3>
         <div style={{display:'flex',gap:10,marginBottom:14}}>
@@ -1000,7 +1078,6 @@ const SettingsV=({themeName,uTheme,currency,uCurrency,exRate,uExRate,theme})=>{
         </div>
       </Card>
 
-      {/* Themes */}
       <Card style={{padding:20}}>
         <h3 style={{margin:'0 0 14px',fontSize:15,fontWeight:600,color:theme.text}}>🎨 Tema de color</h3>
         <div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -1019,7 +1096,6 @@ const SettingsV=({themeName,uTheme,currency,uCurrency,exRate,uExRate,theme})=>{
         </div>
       </Card>
 
-      {/* Account info */}
       <Card style={{padding:20}}>
         <h3 style={{margin:'0 0 12px',fontSize:15,fontWeight:600,color:theme.text}}>👤 Cuenta</h3>
         <p style={{margin:'0 0 14px',fontSize:13,color:theme.text3}}>Tus datos son privados y están guardados en la nube. Solo tú puedes verlos.</p>
