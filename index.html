@@ -186,9 +186,13 @@ const App=()=>{
           dbLoad(uid,'theme','midnight'),dbLoad(uid,'currency','GBP'),dbLoad(uid,'exRate',1.17),
         ]);
         if(d&&typeof d==='object'&&!Array.isArray(d))setDist(d);
-        if(a&&Array.isArray(a)&&a.length>0)setAccs(a);
+        // FIX: usar null como señal de "no guardado en DB" en vez de length>0
+        // Si la DB devuelve array (incluso vacío), lo usamos. Solo usamos default si devuelve null.
+        if(Array.isArray(a))setAccs(a.length>0?a:DEF_ACCS());
+        else if(a===null)setAccs(DEF_ACCS()); // primera vez: usar defaults
         if(sv&&Array.isArray(sv))setSavs(sv);
-        if(c&&Array.isArray(c)&&c.length>0)setCats(c);
+        if(Array.isArray(c))setCats(c.length>0?c:DEF_CATS());
+        else if(c===null)setCats(DEF_CATS());
         if(e&&Array.isArray(e))setExps(e);
         if(g&&Array.isArray(g))setGoals(g);
         if(iv&&Array.isArray(iv))setInvs(iv);
