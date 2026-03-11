@@ -1,3 +1,7 @@
+
+Gestor financiero · HTML
+Copy
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -7,6 +11,28 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Finanzas">
   <title>Gestor Financiero Personal</title>
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    const firebaseConfig = {
+      apiKey: "AIzaSyALBFWmnSTsPlYi8TA_6Q_CvUzu-5kOkaY",
+      authDomain: "myfin-mk2.firebaseapp.com",
+      projectId: "myfin-mk2",
+      storageBucket: "myfin-mk2.firebasestorage.app",
+      messagingSenderId: "371858436203",
+      appId: "1:371858436203:web:8073719516fd9fa3a8012e"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    // Attach helpers to db object for access from Babel script
+    db._doc = doc;
+    db._getDoc = getDoc;
+    db._setDoc = setDoc;
+    window._db = db;
+    window._fsReady = true;
+    window.dispatchEvent(new Event("fsReady"));
+  </script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -52,18 +78,30 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    // ─── STORAGE HELPERS (Claude persistent storage) ─────────────────────────
-    const storage = window.storage;
+    // ─── STORAGE HELPERS (Firebase Firestore) ───────────────────────────────
+    const waitForFirebase = () => new Promise(resolve => {
+      if (window._fsReady) return resolve();
+      window.addEventListener('fsReady', resolve, { once: true });
+      setTimeout(resolve, 5000); // fallback timeout
+    });
 
     const loadData = async (key, fallback) => {
       try {
-        const res = await storage.get(key);
-        return res ? JSON.parse(res.value) : fallback;
-      } catch { return fallback; }
+        await waitForFirebase();
+        const db = window._db;
+        if (!db) return fallback;
+        const snap = await db._getDoc(db._doc(db, 'finanzas', key));
+        return snap.exists() ? snap.data().value : fallback;
+      } catch(e) { console.error('Firebase load error', key, e); return fallback; }
     };
 
     const saveData = async (key, value) => {
-      try { await storage.set(key, JSON.stringify(value)); } catch(e) { console.error('Storage error', e); }
+      try {
+        await waitForFirebase();
+        const db = window._db;
+        if (!db) return;
+        await db._setDoc(db._doc(db, 'finanzas', key), { value });
+      } catch(e) { console.error('Firebase save error', key, e); }
     };
 
     // ─── ICONS ────────────────────────────────────────────────────────────────
