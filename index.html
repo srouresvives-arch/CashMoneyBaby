@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Finance App">
+  <title>Gestor Financiero Personal</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const FinanceApp = () => {
+      const [currentView, setCurrentView] = useState('home');
+      
+      const [distribution, setDistribution] = useState(() => {
+        const saved = localStorage.getItem('distribution');
+        return saved ? JSON.parse(saved) : {
+          madre: { percentage: 20, label: 'A tu madre' },
+          inversion: { percentage: 10, label: 'Inversión (ETF)' },
+          ahorro: { percentage: 40, label: 'Ahorro intocable' },
+          caprichos: { percentage: 30, label: 'Caprichos/Emergencias' }
+        };
+      });
+
+      const [accounts, setAccounts] = useState(() => {
+        const saved = localStorage.getItem('financeAccounts');
+        return saved ? JSON.parse(saved) : [
+          { id: 1, name: 'Santander', type: 'current', balance: 1211.53 }
+        ];
+      });
+
+      const [monthlySavings, setMonthlySavings] = useState(() => {
+        const saved = localStorage.getItem('monthlySavings');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [expenseCategories, setExpenseCategories] = useState(() => {
+        const saved = localStorage.getItem('expenseCategories');
+        return saved ? JSON.parse(saved) : [
+          { id: 1, name: 'Renta' },
+          { id: 2, name: 'Agua' },
+          { id: 3, name: 'Electricidad' },
+          { id: 4, name: 'Council Tax' },
+          { id: 5, name: 'Gimnasio' },
+          { id: 6, name: 'Víveres' },
+          { id: 7, name: 'WiFi' },
+          { id: 8, name: 'Gasolina' }
+        ];
+      });
+
+      const [monthlyExpenses, setMonthlyExpenses] = useState(() => {
+        const saved = localStorage.getItem('monthlyExpenses');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [motherDebt, setMotherDebt] = useState(() => {
+        const saved = localStorage.getItem('motherDebt');
+        return saved ? JSON.parse(saved) : { total: 3800, paid: 0 };
+      });
+
+      useEffect(() => {
+        localStorage.setItem('distribution', JSON.stringify(distribution));
+      }, [distribution]);
+
+      useEffect(() => {
+        localStorage.setItem('financeAccounts', JSON.stringify(accounts));
+      }, [accounts]);
+
+      useEffect(() => {
+        localStorage.setItem('monthlySavings', JSON.stringify(monthlySavings));
+      }, [monthlySavings]);
+
+      useEffect(() => {
+        localStorage.setItem('expenseCategories', JSON.stringify(expenseCategories));
+      }, [expenseCategories]);
+
+      useEffect(() => {
+        localStorage.setItem('monthlyExpenses', JSON.stringify(monthlyExpenses));
+      }, [monthlyExpenses]);
+
+      useEffect(() => {
+        localStorage.setItem('motherDebt', JSON.stringify(motherDebt));
+      }, [motherDebt]);
+
+      const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+      const totalSavingsAccounts = accounts.filter(acc => acc.type === 'savings').reduce((sum, acc) => sum + acc.balance, 0);
+      const remainingDebt = motherDebt.total - motherDebt.paid;
+
+      // Iconos SVG simples
+      const HomeIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>;
+      const WalletIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>;
+      const TrendingIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>;
+      const ChartIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>;
+      const TargetIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+      const PlusIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
+      const EditIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>;
+      const TrashIcon = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
+      const CalendarIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
+      const PieIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>;
+
+      const HomeView = () => {
+        const [editingDist, setEditingDist] = useState(null);
+        const [tempPercentage, setTempPercentage] = useState('');
+
+        const savePercentage = (key) => {
+          const value = parseInt(tempPercentage);
+          if (value >= 0 && value <= 100) {
+            setDistribution({
+              ...distribution,
+              [key]: { ...distribution[key], percentage: value }
+            });
+          }
+          setEditingDist(null);
+          setTempPercentage('');
+        };
+
+        return (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-6 text-white">
+              <p className="text-sm opacity-90">Balance Total</p>
+              <h1 className="text-4xl font-bold mt-1">£{totalBalance.toFixed(2)}</h1>
+            </div>
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <h3 className="font-semibold text-lg mb-4">Distribución de Ahorro Mensual</h3>
+              <div className="space-y-3">
+                {Object.entries(distribution).map(([key, item]) => (
+                  <div key={key} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span className="text-sm text-gray-700">{item.label}</span>
+                    {editingDist === key ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={tempPercentage}
+                          onChange={(e) => setTempPercentage(e.target.value)}
+                          className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                          autoFocus
+                        />
+                        <button onClick={() => savePercentage(key)} className="text-blue-600 text-sm font-medium">
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-lg">{item.percentage}%</span>
+                        <button
+                          onClick={() => {
+                            setEditingDist(key);
+                            setTempPercentage(item.percentage.toString());
+                          }}
+                          className="text-gray-400 hover:text-blue-600"
+                        >
+                          <EditIcon />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-lg">Registro Mensual de Ahorro</h3>
+                <button
+                  onClick={() => setCurrentView('addSaving')}
+                  className="text-blue-600 text-sm font-medium flex items-center gap-1"
+                >
+                  <PlusIcon />
+                  Añadir
+                </button>
+              </div>
+              {monthlySavings.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center py-4">No hay registros aún</p>
+              ) : (
+                <div className="space-y-2">
+                  {monthlySavings.slice(-3).reverse().map((record) => (
+                    <div key={record.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="text-sm font-medium">{record.month}</span>
+                      <span className="font-semibold text-blue-600">£{record.amount}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      const AddSavingView = () => {
+        const [month, setMonth] = useState('');
+        const [amount, setAmount] = useState('');
+
+        const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+        const saveSaving = () => {
+          if (month && amount) {
+            setMonthlySavings([
+              ...monthlySavings,
+              { id: Date.now(), month, amount: parseFloat(amount) }
+            ]);
+            setCurrentView('home');
+          }
+        };
+
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold">Registrar Ahorro Mensual</h2>
+            <div className="bg-white rounded-xl p-6 border border-gray-200 space-y-4">
+              <div>
+                <label className="text-sm text-gray-600 mb-2 block">Mes</label>
+                <select
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Selecciona mes</option>
+                  {months.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm text-gray-600 mb-2 block">Cantidad ahorrada (£)</label>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={saveSaving}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium"
+                >
+                  Guardar
+                </button>
+                <button
+                  onClick={() => setCurrentView('home')}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-medium"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const AccountsView = () => {
+        const [showAddAccount, setShowAddAccount] = useState(false);
+        const [editingAccount, setEditingAccount] = useState(null);
+        const [newAccount, setNewAccount] = useState({ name: '', type: 'savings', balance: 0 });
+        const [tempBalance, setTempBalance] = useState('');
+
+        const addAccount = () => {
+          if (newAccount.name && newAccount.balance >= 0) {
+            setAccounts([...accounts, { 
+              id: Date.now(), 
+              ...newAccount,
+              balance: parseFloat(newAccount.balance)
+            }]);
+            setNewAccount({ name: '', type: 'savings', balance: 0 });
+            setShowAddAccount(false);
+          }
+        };
+
+        const saveBalance = (id) => {
+          const value = parseFloat(tempBalance);
+          if (value >= 0) {
+            setAccounts(accounts.map(acc => 
+              acc.id === id ? { ...acc, balance: value } : acc
+            ));
+          }
+          setEditingAccount(null);
+          setTempBalance('');
+        };
+
+        const deleteAccount = (id) => {
+          if (confirm('¿Seguro que quieres eliminar esta cuenta?')) {
+            setAccounts(accounts.filter(acc => acc.id !== id));
+          }
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Mis Cuentas</h2>
+              <button
+                onClick={() => setShowAddAccount(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+              >
+                <PlusIcon />
+                Añadir
+              </button>
+            </div>
+
+            {showAddAccount && (
+              <div className="bg-white rounded-xl p-6 border border-gray-200">
+                <h3 className="font-semibold mb-4">Nueva Cuenta</h3>
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Nombre (ej: Chase, Revolut)"
+                    value={newAccount.name}
+                    onChange={(e) => setNewAccount({...newAccount, name: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <select
+                    value={newAccount.type}
+                    onChange={(e) => setNewAccount({...newAccount, type: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="current">Cuenta corriente</option>
+                    <option value="savings">Cuenta ahorro</option>
+                    <option value="investment">Inversión</option>
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="Balance inicial"
+                    value={newAccount.balance}
+                    onChange={(e) => setNewAccount({...newAccount, balance: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={addAccount}
+                      className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium"
+                    >
+                      Guardar
+                    </button>
+                    <button
+                      onClick={() => setShowAddAccount(false)}
+                      className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-medium"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {accounts.map(acc => (
+                <div key={acc.id} className="bg-white rounded-xl p-5 border border-gray-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                        <WalletIcon />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-lg">{acc.name}</p>
+                        <p className="text-sm text-gray-500 capitalize">{acc.type === 'savings' ? '💰 Ahorro' : acc.type === 'investment' ? '📈 Inversión' : '🏦 Corriente'}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteAccount(acc.id)}
+                      className="text-red-500 text-sm"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                  <div className="pt-3 border-t border-gray-100">
+                    <p className="text-sm text-gray-600 mb-2">Balance</p>
+                    {editingAccount === acc.id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={tempBalance}
+                          onChange={(e) => setTempBalance(e.target.value)}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => saveBalance(acc.id)}
+                          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <p className="text-2xl font-bold text-blue-600">£{acc.balance.toFixed(2)}</p>
+                        <button
+                          onClick={() => {
+                            setEditingAccount(acc.id);
+                            setTempBalance(acc.balance.toString());
+                          }}
+                          className="text-gray-400 hover:text-blue-600"
+                        >
+                          <EditIcon />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      };
+
+      const ExpensesView = () => {
+        const [showAddCategory, setShowAddCategory] = useState(false);
+        const [editingCategoryName, setEditingCategoryName] = useState(null);
+        const [newCategoryName, setNewCategoryName] = useState('');
+        const [tempCategoryName, setTempCategoryName] = useState('');
+        const [selectedMonth, setSelectedMonth] = useState('');
+
+        const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+        const addCategory = () => {
+          if (newCategoryName.trim()) {
+            setExpenseCategories([
+              ...expenseCategories,
+              { id: Date.now(), name: newCategoryName.trim() }
+            ]);
+            setNewCategoryName('');
+            setShowAddCategory(false);
+          }
+        };
+
+        const saveCategoryName = (id) => {
+          if (tempCategoryName.trim()) {
+            setExpenseCategories(expenseCategories.map(cat =>
+              cat.id === id ? { ...cat, name: tempCategoryName.trim() } : cat
+            ));
+          }
+          setEditingCategoryName(null);
+          setTempCategoryName('');
+        };
+
+        const deleteCategory = (id) => {
+          if (confirm('¿Eliminar esta categoría y todos sus registros mensuales?')) {
+            setExpenseCategories(expenseCategories.filter(cat => cat.id !== id));
+            setMonthlyExpenses(monthlyExpenses.filter(exp => exp.categoryId !== id));
+          }
+        };
+
+        const getExpenseForMonth = (categoryId, month) => {
+          const expense = monthlyExpenses.find(e => e.categoryId === categoryId && e.month === month);
+          return expense ? expense.amount : 0;
+        };
+
+        const setExpenseForMonth = (categoryId, month, amount) => {
+          const existingIndex = monthlyExpenses.findIndex(e => e.categoryId === categoryId && e.month === month);
+          
+          if (existingIndex >= 0) {
+            const updated = [...monthlyExpenses];
+            updated[existingIndex] = { ...updated[existingIndex], amount: parseFloat(amount) || 0 };
+            setMonthlyExpenses(updated);
+          } else {
+            setMonthlyExpenses([
+              ...monthlyExpenses,
+              { id: Date.now(), categoryId, month, amount: parseFloat(amount) || 0 }
+            ]);
+          }
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Gastos</h2>
+              <button
+                onClick={() => setShowAddCategory(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+              >
+                <PlusIcon />
+                Categoría
+              </button>
+            </div>
+
+            {showAddCategory && (
+              <div className="bg-white rounded-xl p-6 border border-gray-200">
+                <h3 className="font-semibold mb-4">Nueva Categoría de Gasto</h3>
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Nombre (ej: Netflix, Transporte)"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={addCategory}
+                      className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium"
+                    >
+                      Guardar
+                    </button>
+                    <button
+                      onClick={() => setShowAddCategory(false)}
+                      className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-medium"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <div className="flex items-center gap-2 mb-4">
+                <CalendarIcon />
+                <h3 className="font-semibold text-lg">Selecciona Mes</h3>
+              </div>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="">Elige un mes para editar gastos</option>
+                {months.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+
+            {selectedMonth && (
+              <div className="bg-white rounded-xl p-6 border border-gray-200">
+                <h3 className="font-semibold text-lg mb-4">Gastos de {selectedMonth}</h3>
+                <div className="space-y-3">
+                  {expenseCategories.map(cat => {
+                    const amount = getExpenseForMonth(cat.id, selectedMonth);
+                    return (
+                      <div key={cat.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <span className="text-sm font-medium">{cat.name}</span>
+                        <input
+                          type="number"
+                          value={amount || ''}
+                          onChange={(e) => setExpenseForMonth(cat.id, selectedMonth, e.target.value)}
+                          placeholder="0"
+                          className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-right"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200 flex justify-between items-center">
+                  <span className="font-medium">Total {selectedMonth}</span>
+                  <span className="font-bold text-lg text-red-600">
+                    £{expenseCategories.reduce((sum, cat) => sum + getExpenseForMonth(cat.id, selectedMonth), 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <h3 className="font-semibold text-lg mb-4">Gestionar Categorías</h3>
+              <div className="space-y-2">
+                {expenseCategories.map(cat => (
+                  <div key={cat.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    {editingCategoryName === cat.id ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={tempCategoryName}
+                          onChange={(e) => setTempCategoryName(e.target.value)}
+                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => saveCategoryName(cat.id)}
+                          className="text-blue-600 text-sm font-medium"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{cat.name}</span>
+                          <button
+                            onClick={() => {
+                              setEditingCategoryName(cat.id);
+                              setTempCategoryName(cat.name);
+                            }}
+                            className="text-gray-400 hover:text-blue-600"
+                          >
+                            <EditIcon />
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => deleteCategory(cat.id)}
+                          className="text-red-400 hover:text-red-600"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const StatsView = () => {
+        const categoryTotals = expenseCategories.map(cat => {
+          const total = monthlyExpenses
+            .filter(exp => exp.categoryId === cat.id)
+            .reduce((sum, exp) => sum + exp.amount, 0);
+          return { name: cat.name, amount: total, type: 'expense' };
+        });
+
+        const totalExpenses = categoryTotals.reduce((sum, cat) => sum + cat.amount, 0);
+        const totalInAccounts = totalBalance;
+
+        const allItems = [
+          ...categoryTotals,
+          { name: 'En Cuentas de Ahorro', amount: totalSavingsAccounts, type: 'saving' },
+          { name: 'Balance Total', amount: totalInAccounts, type: 'account' }
+        ].filter(item => item.amount > 0);
+
+        const grandTotal = allItems.reduce((sum, item) => sum + item.amount, 0);
+
+        const getColor = (type, index) => {
+          if (type === 'saving') return 'bg-green-500';
+          if (type === 'account') return 'bg-blue-500';
+          const colors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'];
+          return colors[index % colors.length];
+        };
+
+        return (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold">Estadísticas</h2>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <p className="text-sm text-gray-600">Gastos Acumulados</p>
+                <p className="text-2xl font-bold text-red-600">£{totalExpenses.toFixed(2)}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <p className="text-sm text-gray-600">En Cuentas Ahorro</p>
+                <p className="text-2xl font-bold text-green-600">£{totalSavingsAccounts.toFixed(2)}</p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                <PieIcon />
+                Distribución Total
+              </h3>
+              
+              <div className="mb-6">
+                <div className="flex h-4 rounded-full overflow-hidden">
+                  {allItems.map((item, idx) => {
+                    const percentage = (item.amount / grandTotal) * 100;
+                    const colorClass = getColor(item.type, idx);
+                    return (
+                      <div
+                        key={idx}
+                        className={colorClass}
+                        style={{ width: `${percentage}%` }}
+                        title={`${item.name}: ${percentage.toFixed(1)}%`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {allItems.map((item, idx) => {
+                  const percentage = ((item.amount / grandTotal) * 100).toFixed(1);
+                  const colorClass = getColor(item.type, idx);
+                  return (
+                    <div key={idx}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-3 h-3 rounded-full ${colorClass}`}></div>
+                          <span className="text-gray-700">{item.name}</span>
+                        </div>
+                        <span className="font-medium">{percentage}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`${colorClass} h-2 rounded-full transition-all`}
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <h3 className="font-semibold text-lg mb-4">Desglose Completo (Acumulado)</h3>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-2">Gastos por Categoría</p>
+                  {categoryTotals.map((cat, idx) => (
+                    <div key={idx} className="flex justify-between py-2 border-b border-gray-100">
+                      <span className="text-sm">{cat.name}</span>
+                      <span className="font-medium text-red-600">£{cat.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between py-2 font-bold border-t-2 border-gray-300 mt-2">
+                    <span className="text-sm">Total Gastos</span>
+                    <span className="text-red-600">£{totalExpenses.toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Ahorros</p>
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-sm">En Cuentas de Ahorro</span>
+                    <span className="font-medium text-green-600">£{totalSavingsAccounts.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-gray-100">
+                    <span className="text-sm">Balance Total (Todas)</span>
+                    <span className="font-medium text-blue-600">£{totalInAccounts.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const GoalsView = () => {
+        const [paymentAmount, setPaymentAmount] = useState('');
+        const [editingDebt, setEditingDebt] = useState(false);
+        const [tempTotal, setTempTotal] = useState('');
+        const [tempPaid, setTempPaid] = useState('');
+
+        const addPayment = () => {
+          const amount = parseFloat(paymentAmount);
+          if (amount > 0 && amount <= remainingDebt) {
+            setMotherDebt({
+              ...motherDebt,
+              paid: motherDebt.paid + amount
+            });
+            setPaymentAmount('');
+          }
+        };
+
+        const saveDebt = () => {
+          const total = parseFloat(tempTotal);
+          const paid = parseFloat(tempPaid);
+          if (total >= 0 && paid >= 0 && paid <= total) {
+            setMotherDebt({ total, paid });
+          }
+          setEditingDebt(false);
+        };
+
+        const debtProgress = (motherDebt.paid / motherDebt.total) * 100;
+
+        return (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold">Objetivos</h2>
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-lg">Deuda con tu madre</h3>
+                <button
+                  onClick={() => {
+                    setEditingDebt(true);
+                    setTempTotal(motherDebt.total.toString());
+                    setTempPaid(motherDebt.paid.toString());
+                  }}
+                  className="text-gray-400 hover:text-blue-600"
+                >
+                  <EditIcon />
+                </button>
+              </div>
+
+              {editingDebt ? (
+                <div className="space-y-3 mb-4">
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">Deuda total (£)</label>
+                    <input
+                      type="number"
+                      value={tempTotal}
+                      onChange={(e) => setTempTotal(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">Ya pagado (£)</label>
+                    <input
+                      type="number"
+                      value={tempPaid}
+                      onChange={(e) => setTempPaid(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={saveDebt}
+                      className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium"
+                    >
+                      Guardar
+                    </button>
+                    <button
+                      onClick={() => setEditingDebt(false)}
+                      className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-medium"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-6">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-gray-600">Progreso</span>
+                      <span className="font-medium">{debtProgress.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div 
+                        className="bg-blue-600 h-3 rounded-full transition-all"
+                        style={{ width: `${debtProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm text-gray-600">Total deuda</p>
+                      <p className="text-2xl font-bold">£{motherDebt.total}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm text-gray-600">Pagado</p>
+                      <p className="text-2xl font-bold text-green-600">£{motherDebt.paid}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 col-span-2">
+                      <p className="text-sm text-gray-600">Restante</p>
+                      <p className="text-2xl font-bold text-red-600">£{remainingDebt.toFixed(2)}</p>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-200 pt-4">
+                    <p className="text-sm text-gray-600 mb-3">Registrar pago</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        placeholder="Cantidad (£)"
+                        value={paymentAmount}
+                        onChange={(e) => setPaymentAmount(e.target.value)}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                      />
+                      <button
+                        onClick={addPayment}
+                        className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium"
+                      >
+                        Añadir
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      const BottomNav = () => (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
+          <div className="flex justify-around max-w-md mx-auto">
+            <button
+              onClick={() => setCurrentView('home')}
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg ${
+                currentView === 'home' || currentView === 'addSaving' ? 'text-blue-600 bg-blue-50' : 'text-gray-600'
+              }`}
+            >
+              <HomeIcon />
+              <span className="text-xs font-medium">Inicio</span>
+            </button>
+            <button
+              onClick={() => setCurrentView('accounts')}
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg ${
+                currentView === 'accounts' ? 'text-blue-600 bg-blue-50' : 'text-gray-600'
+              }`}
+            >
+              <WalletIcon />
+              <span className="text-xs font-medium">Cuentas</span>
+            </button>
+            <button
+              onClick={() => setCurrentView('expenses')}
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg ${
+                currentView === 'expenses' ? 'text-blue-600 bg-blue-50' : 'text-gray-600'
+              }`}
+            >
+              <TrendingIcon />
+              <span className="text-xs font-medium">Gastos</span>
+            </button>
+            <button
+              onClick={() => setCurrentView('stats')}
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg ${
+                currentView === 'stats' ? 'text-blue-600 bg-blue-50' : 'text-gray-600'
+              }`}
+            >
+              <ChartIcon />
+              <span className="text-xs font-medium">Stats</span>
+            </button>
+            <button
+              onClick={() => setCurrentView('goals')}
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg ${
+                currentView === 'goals' ? 'text-blue-600 bg-blue-50' : 'text-gray-600'
+              }`}
+            >
+              <TargetIcon />
+              <span className="text-xs font-medium">Objetivos</span>
+            </button>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="max-w-md mx-auto p-6">
+            {currentView === 'home' && <HomeView />}
+            {currentView === 'addSaving' && <AddSavingView />}
+            {currentView === 'accounts' && <AccountsView />}
+            {currentView === 'expenses' && <ExpensesView />}
+            {currentView === 'stats' && <StatsView />}
+            {currentView === 'goals' && <GoalsView />}
+          </div>
+          <BottomNav />
+        </div>
+      );
+    };
+
+    ReactDOM.render(<FinanceApp />, document.getElementById('root'));
+  </script>
+</body>
+</html>
