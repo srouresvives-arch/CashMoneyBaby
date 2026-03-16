@@ -357,12 +357,14 @@ const HomeV=({dist,uDist,accs,totBal,cats,exps,goals,invs,fmt,fmtN,sym,exRate,cu
     setChatLd(true);
     try{
       const messages=newHistory.map(m=>({role:m.role,content:m.content}));
-      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,system:buildContext(),messages})});
+      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,tools:[{type:'web_search_20250305',name:'web_search'}],system:buildContext(),messages})});
+      if(!res.ok){const err=await res.text();console.error('API error:',res.status,err);setChatHistory([...newHistory,{role:'assistant',content:`Error ${res.status}: ${err.slice(0,200)}`}]);setChatLd(false);return;}
       const d=await res.json();
-      const reply=d.content?.find(c=>c.type==='text')?.text||'Error al conectar.';
+      const reply=d.content?.filter(c=>c.type==='text').map(c=>c.text).join('')||'Sin respuesta';
       setChatHistory([...newHistory,{role:'assistant',content:reply}]);
-    }catch{
-      setChatHistory([...newHistory,{role:'assistant',content:'Error al conectar. Inténtalo de nuevo.'}]);
+    }catch(e){
+      console.error('Fetch error:',e);
+      setChatHistory([...newHistory,{role:'assistant',content:`Error: ${e.message}`}]);
     }
     setChatLd(false);
   };
