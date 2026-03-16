@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Finanzas">
   <title>Gestor Financiero Personal</title>
+  <link rel="manifest" href="data:application/json,{%22name%22:%22Mis+Finanzas%22,%22short_name%22:%22Finanzas%22,%22display%22:%22standalone%22,%22background_color%22:%22%230f1117%22,%22theme_color%22:%22%236c63ff%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f1117'/%3E%3Ctext y='.9em' font-size='80' text-anchor='middle' x='50'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E%22,%22sizes%22:%22192x192%22}]}">
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -227,6 +228,7 @@ const App=()=>{
   const [invs,setInvs]=useState([]);
   const [mlist,setMlist]=useState(genMonths());
   const [showQuick,setShowQuick]=useState(false);
+  const [income,setIncome]=useState({});// {monthKey: amountGBP}
 
   useEffect(()=>{
     if(!window._onAuth)return;
@@ -244,7 +246,7 @@ const App=()=>{
         const [d,a,sv,c,e,g,iv,ml,tn,cu,er]=await Promise.all([
           dbLoad(uid,'dist',null),dbLoad(uid,'accs',null),dbLoad(uid,'savs',[]),
           dbLoad(uid,'cats',null),dbLoad(uid,'exps',[]),dbLoad(uid,'goals',[]),
-          dbLoad(uid,'invs',[]),dbLoad(uid,'mlist',null),
+          dbLoad(uid,'invs',[]),dbLoad(uid,'mlist',null),dbLoad(uid,'income',{}),
           dbLoad(uid,'theme','midnight'),dbLoad(uid,'currency','GBP'),dbLoad(uid,'exRate',1.17),
         ]);
         if(d&&typeof d==='object'&&!Array.isArray(d))setDist(d);
@@ -259,6 +261,7 @@ const App=()=>{
         if(g&&Array.isArray(g))setGoals(g);
         if(iv&&Array.isArray(iv))setInvs(iv);
         if(ml&&Array.isArray(ml)&&ml.length>0)setMlist(ml);
+        const incomeData=await dbLoad(uid,'income',{});if(incomeData&&typeof incomeData==='object')setIncome(incomeData);
         if(tn&&typeof tn==='string')setThemeName(tn);
         if(cu&&typeof cu==='string')setCurrency(cu);
         if(er&&typeof er==='number')setExRate(er);
@@ -278,6 +281,7 @@ const App=()=>{
   const uExps=v=>{setExps(v);save('exps',v)};
   const uGoals=v=>{setGoals(v);save('goals',v)};
   const uInvs=v=>{setInvs(v);save('invs',v)};
+  const uIncome=v=>{setIncome(v);save('income',v)};
   const uMlist=v=>{setMlist(v);save('mlist',v)};
   const uTheme=v=>{setThemeName(v);save('theme',v)};
   const uCurrency=v=>{setCurrency(v);save('currency',v)};
@@ -293,7 +297,7 @@ const App=()=>{
   if(!user)return<Login/>;
   if(ld)return<div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,background:theme.bg}}><Spin c={theme.accent}/><p style={{color:theme.text3,fontSize:14,margin:0}}>Cargando tus datos...</p></div>;
 
-  const sp={theme,dist,uDist,accs,uAccs,savs,uSavs,cats,uCats,exps,uExps,goals,uGoals,invs,uInvs,mlist,uMlist,totBal,totSav,setView,fmt,fmtN,sym,toGBP,currency,uCurrency,exRate,uExRate,themeName,uTheme};
+  const sp={theme,dist,uDist,accs,uAccs,savs,uSavs,cats,uCats,exps,uExps,goals,uGoals,invs,uInvs,mlist,uMlist,totBal,totSav,setView,fmt,fmtN,sym,toGBP,currency,uCurrency,exRate,uExRate,themeName,uTheme,income,uIncome};
   return(
     <ThemeCtx.Provider value={{theme,themeName}}>
       <div style={{minHeight:'100vh',background:theme.bg,paddingBottom:88}}>
@@ -327,10 +331,24 @@ const Sel=({children,style,...p})=>{const {theme}=useTheme();return<select class
 const Btn=({children,onClick,style})=>{const {theme}=useTheme();return<button onClick={onClick} className="bp" style={{background:theme.accent,color:'#fff',...style}}>{children}</button>};
 const BtnS=({children,onClick,style})=>{const {theme}=useTheme();return<button onClick={onClick} className="bs" style={{background:theme.bg3,color:theme.text,...style}}>{children}</button>};
 
-const HomeV=({dist,uDist,accs,totBal,fmt,theme})=>{
+const HomeV=({dist,uDist,accs,totBal,cats,exps,mlist,income,uIncome,fmt,fmtN,sym,exRate,currency,theme})=>{
   const [ek,setEk]=useState(null);const [tp,setTp]=useState('');
+  const [editIncome,setEditIncome]=useState(false);const [tmpIncome,setTmpIncome]=useState('');const [incomeCur,setIncomeCur]=useState(currency);
   const saveP=k=>{const v=parseInt(tp);if(!isNaN(v)&&v>=0&&v<=100)uDist({...dist,[k]:{...dist[k],pct:v}});setEk(null);setTp('')};
   const distColors={madre:theme.red,inversion:theme.green,ahorro:theme.accent,caprichos:theme.yellow};
+  const today=new Date();
+  const mk=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const monthLabel=MES[today.getMonth()];
+  const incomeGBP=income[mk]||0;
+  const totExpsMes=cats.reduce((s,c)=>{const e=exps.find(x=>x.cid===c.id&&x.mk===mk);return s+(e?(e.amountGBP||0):0);},0);
+  const pctGastat=incomeGBP>0?Math.min((totExpsMes/incomeGBP)*100,100):0;
+  const pctColor=pctGastat>85?theme.red:pctGastat>60?theme.yellow:theme.green;
+  const saveIncome=()=>{
+    const v=parseFloat(tmpIncome)||0;
+    const gbp=incomeCur==='EUR'?v/exRate:v;
+    uIncome({...income,[mk]:gbp});
+    setEditIncome(false);
+  };
   return(
     <div style={{paddingTop:8,display:'flex',flexDirection:'column',gap:16}}>
       <div style={{background:theme.hero,borderRadius:20,padding:'22px 20px',border:`1px solid ${theme.heroBorder}`,position:'relative',overflow:'hidden'}}>
@@ -347,6 +365,44 @@ const HomeV=({dist,uDist,accs,totBal,fmt,theme})=>{
           ))}
         </div>
       </div>
+
+      {/* INCOME + SPENDING CARD */}
+      <Card style={{padding:20}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+          <h3 style={{margin:0,fontSize:15,fontWeight:600,color:theme.text}}>{monthLabel} — Ingresos</h3>
+          <button onClick={()=>{setEditIncome(true);setTmpIncome(incomeGBP?(currency==='EUR'?fmtN(incomeGBP).toFixed(2):incomeGBP.toFixed(2)):'');setIncomeCur(currency)}} style={{background:'none',border:'none',color:theme.text3,cursor:'pointer',padding:4}}><EditIc/></button>
+        </div>
+        {editIncome?(
+          <div style={{display:'flex',gap:8,marginBottom:14}}>
+            <Inp type="number" inputMode="decimal" value={tmpIncome} onChange={e=>setTmpIncome(e.target.value)} placeholder="0.00" autoFocus onKeyDown={e=>e.key==='Enter'&&saveIncome()} style={{flex:1}}/>
+            <Sel value={incomeCur} onChange={e=>setIncomeCur(e.target.value)} style={{width:80}}><option value="GBP">£</option><option value="EUR">€</option></Sel>
+            <button onClick={saveIncome} style={{background:theme.accent,color:'#fff',border:'none',borderRadius:10,padding:'0 16px',cursor:'pointer',fontWeight:600}}>OK</button>
+          </div>
+        ):(
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:14}}>
+            <div>
+              <p style={{margin:'0 0 2px',fontSize:11,color:theme.text3}}>Ingreso mensual</p>
+              <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:'DM Mono',color:incomeGBP>0?theme.green:theme.text3}}>{incomeGBP>0?fmt(incomeGBP):'No definido'}</p>
+            </div>
+            {incomeGBP>0&&(<div style={{textAlign:'right'}}>
+              <p style={{margin:'0 0 2px',fontSize:11,color:theme.text3}}>Gastado</p>
+              <p style={{margin:0,fontSize:24,fontWeight:700,fontFamily:'DM Mono',color:pctColor}}>{fmt(totExpsMes)}</p>
+            </div>)}
+          </div>
+        )}
+        {incomeGBP>0&&!editIncome&&(
+          <>
+            <div style={{height:10,background:theme.bg3,borderRadius:5,overflow:'hidden',marginBottom:8,border:`1px solid ${theme.border}`}}>
+              <div style={{height:'100%',width:`${pctGastat}%`,background:pctColor,borderRadius:5,transition:'width .6s'}}/>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between'}}>
+              <span style={{fontSize:12,color:theme.text3}}>{pctGastat.toFixed(0)}% gastat</span>
+              <span style={{fontSize:12,color:theme.green,fontFamily:'DM Mono'}}>{fmt(Math.max(incomeGBP-totExpsMes,0))} lliure</span>
+            </div>
+          </>
+        )}
+      </Card>
+
       <Card style={{padding:20}}>
         <h3 style={{margin:'0 0 12px',fontSize:15,fontWeight:600,color:theme.text}}>Distribución Mensual</h3>
         <div style={{height:8,borderRadius:4,overflow:'hidden',display:'flex',marginBottom:12}}>
@@ -440,7 +496,7 @@ const ExpsV=({cats,uCats,exps,uExps,mlist,uMlist,fmt,fmtN,sym,currency,exRate,th
   const defKey=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
   const [selKey,setSelKey]=useState(mlist.find(m=>m.key===defKey)?.key||mlist[0]?.key||'');
   const [showMon,setShowMon]=useState(false);const [showAddCat,setShowAddCat]=useState(false);
-  const [newCat,setNewCat]=useState('');const [editCatId,setEditCatId]=useState(null);const [editCatName,setEditCatName]=useState('');
+  const [newCat,setNewCat]=useState('');const [editCatId,setEditCatId]=useState(null);const [editCatName,setEditCatName]=useState('');const [editBudget,setEditBudget]=useState('');
   const [local,setLocal]=useState({});const [nmName,setNmName]=useState('');const [nmYear,setNmYear]=useState('');
   const [inputCur,setInputCur]=useState(currency);
   const COLS=['#ff6b6b','#f59e0b','#22d3a5','#6c63ff','#ec4899','#8b5cf6','#10b981','#f97316'];
@@ -549,29 +605,39 @@ const ExpsV=({cats,uCats,exps,uExps,mlist,uMlist,fmt,fmtN,sym,currency,exRate,th
             {cats.map((cat,i)=>(
               <div key={cat.id} style={{background:theme.bg3,border:`1px solid ${theme.border}`,borderRadius:12,padding:'10px 12px'}}>
                 {editCatId===cat.id?(
-                  /* Editing category name */
-                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                    <Inp type="text" value={editCatName} onChange={e=>setEditCatName(e.target.value)} autoFocus style={{flex:1,padding:'6px 10px',fontSize:13}} onKeyDown={e=>{if(e.key==='Enter'){if(editCatName.trim())uCats(cats.map(c=>c.id===cat.id?{...c,name:editCatName.trim()}:c));setEditCatId(null)}}}/>
-                    <button onClick={()=>{if(editCatName.trim())uCats(cats.map(c=>c.id===cat.id?{...c,name:editCatName.trim()}:c));setEditCatId(null)}} style={{background:theme.accent,color:'#fff',border:'none',borderRadius:8,padding:'6px 12px',cursor:'pointer',fontWeight:600,fontSize:13}}>OK</button>
-                    <button onClick={()=>setEditCatId(null)} style={{background:'none',border:'none',color:theme.text3,cursor:'pointer',fontSize:18,padding:'0 4px'}}>✕</button>
+                  /* Editing category name + budget */
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                      <Inp type="text" value={editCatName} onChange={e=>setEditCatName(e.target.value)} autoFocus style={{flex:1,padding:'6px 10px',fontSize:13}} placeholder="Nombre" onKeyDown={e=>{if(e.key==='Enter'&&editCatName.trim()){const v=parseFloat(editBudget)||0;const gbp=inputCur==='EUR'?v/exRate:v;uCats(cats.map(c=>c.id===cat.id?{...c,name:editCatName.trim(),budgetGBP:gbp||null}:c));setEditCatId(null)}}}/>
+                      <button onClick={()=>{if(editCatName.trim()){const v=parseFloat(editBudget)||0;const gbp=inputCur==='EUR'?v/exRate:v;uCats(cats.map(c=>c.id===cat.id?{...c,name:editCatName.trim(),budgetGBP:gbp||null}:c));setEditCatId(null)}}} style={{background:theme.accent,color:'#fff',border:'none',borderRadius:8,padding:'6px 12px',cursor:'pointer',fontWeight:600,fontSize:13}}>OK</button>
+                      <button onClick={()=>setEditCatId(null)} style={{background:'none',border:'none',color:theme.text3,cursor:'pointer',fontSize:18,padding:'0 4px'}}>✕</button>
+                    </div>
+                    <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                      <span style={{fontSize:11,color:theme.text3,whiteSpace:'nowrap'}}>Presup. {inputCur==='EUR'?'€':'£'}</span>
+                      <Inp type="number" inputMode="decimal" value={editBudget} onChange={e=>setEditBudget(e.target.value)} placeholder="Sense límit" style={{flex:1,padding:'6px 10px',fontSize:13}}/>
+                    </div>
                   </div>
                 ):(
                   /* Normal row */
-                  <div style={{display:'flex',alignItems:'center',gap:8}}>
-                    <div style={{width:8,height:8,borderRadius:2,background:COLS[i%8],flexShrink:0}}/>
-                    <span style={{fontSize:13,color:theme.text2,flex:1,fontWeight:500}}>{cat.name}</span>
-                    <span style={{color:theme.text3,fontSize:12,marginRight:2}}>{inputCur==='EUR'?'€':'£'}</span>
-                    <Inp
-                      type="number" inputMode="decimal"
-                      value={local[cat.id]??''}
-                      onChange={e=>setLocal(p=>({...p,[cat.id]:e.target.value}))}
-                      onBlur={e=>commit(cat.id,e.target.value)}
-                      onKeyDown={e=>{if(e.key==='Enter'){commit(cat.id,local[cat.id]??'');e.target.blur()}}}
-                      placeholder="0"
-                      style={{width:76,textAlign:'right',padding:'6px 8px',fontSize:13}}
-                    />
-                    <button onClick={()=>{setEditCatId(cat.id);setEditCatName(cat.name)}} style={{background:'none',border:'none',color:theme.text3,cursor:'pointer',padding:'0 2px',opacity:.7}}><EditIc/></button>
-                    <button onClick={()=>{if(confirm('¿Eliminar?')){uCats(cats.filter(c=>c.id!==cat.id));uExps(exps.filter(e=>e.cid!==cat.id))}}} style={{background:'none',border:'none',color:theme.red,cursor:'pointer',padding:'0 2px',opacity:.5}}><DelIc/></button>
+                  <div>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:cat.budgetGBP?5:0}}>
+                      <div style={{width:8,height:8,borderRadius:2,background:COLS[i%8],flexShrink:0}}/>
+                      <span style={{fontSize:13,color:theme.text2,flex:1,fontWeight:500}}>{cat.name}</span>
+                      {cat.budgetGBP&&<span style={{fontSize:10,color:theme.text3,fontFamily:'DM Mono'}}>{sym}{fmtN(getAmt(cat.id)).toFixed(0)}/{sym}{fmtN(cat.budgetGBP).toFixed(0)}</span>}
+                      <span style={{color:theme.text3,fontSize:12,marginRight:2}}>{inputCur==='EUR'?'€':'£'}</span>
+                      <Inp
+                        type="number" inputMode="decimal"
+                        value={local[cat.id]??''}
+                        onChange={e=>setLocal(p=>({...p,[cat.id]:e.target.value}))}
+                        onBlur={e=>commit(cat.id,e.target.value)}
+                        onKeyDown={e=>{if(e.key==='Enter'){commit(cat.id,local[cat.id]??'');e.target.blur()}}}
+                        placeholder="0"
+                        style={{width:76,textAlign:'right',padding:'6px 8px',fontSize:13}}
+                      />
+                      <button onClick={()=>{setEditCatId(cat.id);setEditCatName(cat.name);setEditBudget(cat.budgetGBP?(inputCur==='EUR'?fmtN(cat.budgetGBP).toFixed(2):cat.budgetGBP.toFixed(2)):'')}} style={{background:'none',border:'none',color:theme.text3,cursor:'pointer',padding:'0 2px',opacity:.7}}><EditIc/></button>
+                      <button onClick={()=>{if(confirm('¿Eliminar?')){uCats(cats.filter(c=>c.id!==cat.id));uExps(exps.filter(e=>e.cid!==cat.id))}}} style={{background:'none',border:'none',color:theme.red,cursor:'pointer',padding:'0 2px',opacity:.5}}><DelIc/></button>
+                    </div>
+                    {cat.budgetGBP&&(()=>{const spent=getAmt(cat.id);const pct=Math.min(spent/cat.budgetGBP*100,100);const col=pct>90?theme.red:pct>70?theme.yellow:COLS[i%8];return(<div style={{height:4,background:theme.border,borderRadius:2,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:col,borderRadius:2,transition:'width .4s'}}/></div>);})()}
                   </div>
                 )}
               </div>
@@ -587,8 +653,22 @@ const StatsV=({cats,exps,totSav,mlist,fmt,fmtN,sym,theme})=>{
   const COLS=['#ff6b6b','#f59e0b','#22d3a5','#6c63ff','#ec4899','#8b5cf6','#10b981','#f97316'];
   const ct=cats.map(c=>({name:c.name,amt:exps.filter(e=>e.cid===c.id).reduce((s,e)=>s+(e.amountGBP||0),0)})).filter(c=>c.amt>0);
   const tE=ct.reduce((s,c)=>s+c.amt,0);
-  const mt=mlist.map(m=>({label:m.label.slice(0,6),tot:cats.reduce((s,c)=>{const e=exps.find(x=>x.cid===c.id&&x.mk===m.key);return s+(e?(e.amountGBP||0):0);},0)})).filter(m=>m.tot>0).slice(-8);
+  const mt=mlist.map(m=>({label:m.label.slice(0,6),key:m.key,tot:cats.reduce((s,c)=>{const e=exps.find(x=>x.cid===c.id&&x.mk===m.key);return s+(e?(e.amountGBP||0):0);},0)})).filter(m=>m.tot>0).slice(-8);
   const mx=Math.max(...mt.map(m=>m.tot),1);
+  // Current month vs previous
+  const today=new Date();
+  const curMk=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const prevDate=new Date(today.getFullYear(),today.getMonth()-1,1);
+  const prevMk=`${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,'0')}`;
+  const totCur=cats.reduce((s,c)=>{const e=exps.find(x=>x.cid===c.id&&x.mk===curMk);return s+(e?(e.amountGBP||0):0);},0);
+  const totPrev=cats.reduce((s,c)=>{const e=exps.find(x=>x.cid===c.id&&x.mk===prevMk);return s+(e?(e.amountGBP||0):0);},0);
+  const diff=totCur-totPrev;const diffPct=totPrev>0?(diff/totPrev*100):0;
+  // Per cat comparison
+  const catComp=cats.map(c=>{
+    const cur=exps.find(x=>x.cid===c.id&&x.mk===curMk);const prev=exps.find(x=>x.cid===c.id&&x.mk===prevMk);
+    const cA=cur?(cur.amountGBP||0):0;const pA=prev?(prev.amountGBP||0):0;
+    return{name:c.name,cur:cA,prev:pA,diff:cA-pA};
+  }).filter(c=>c.cur>0||c.prev>0);
   const LineChart=()=>{
     if(mt.length<2)return null;
     const W=320,H=90,pad=10;
@@ -609,7 +689,29 @@ const StatsV=({cats,exps,totSav,mlist,fmt,fmtN,sym,theme})=>{
         <Card style={{padding:16}}><p style={{margin:'0 0 4px',fontSize:11,color:theme.text3,textTransform:'uppercase',letterSpacing:.5}}>Gastos acum.</p><p style={{margin:0,fontSize:22,fontWeight:700,fontFamily:'DM Mono',color:theme.red}}>{sym}{fmtN(tE).toFixed(0)}</p></Card>
         <Card style={{padding:16}}><p style={{margin:'0 0 4px',fontSize:11,color:theme.text3,textTransform:'uppercase',letterSpacing:.5}}>En ahorro</p><p style={{margin:0,fontSize:22,fontWeight:700,fontFamily:'DM Mono',color:theme.green}}>{sym}{fmtN(totSav).toFixed(0)}</p></Card>
       </div>
-      {mt.length>=2&&(<Card style={{padding:20}}><h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:theme.text}}>Evolución de Gastos</h3><div style={{paddingBottom:14,paddingTop:10}}><LineChart/></div></Card>)}
+      {(totCur>0||totPrev>0)&&(<Card style={{padding:20}}>
+        <h3 style={{margin:'0 0 14px',fontSize:15,fontWeight:600,color:theme.text}}>Aquest mes vs anterior</h3>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:14}}>
+          <div><p style={{margin:'0 0 2px',fontSize:11,color:theme.text3}}>Mes anterior</p><p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:'DM Mono',color:theme.text2}}>{sym}{fmtN(totPrev).toFixed(0)}</p></div>
+          <div style={{textAlign:'center',padding:'6px 14px',borderRadius:10,background:diff<=0?`${theme.green}15`:`${theme.red}15`}}>
+            <p style={{margin:0,fontSize:13,fontFamily:'DM Mono',fontWeight:700,color:diff<=0?theme.green:theme.red}}>{diff<=0?'▼':'▲'} {sym}{Math.abs(fmtN(diff)).toFixed(0)}</p>
+            <p style={{margin:0,fontSize:10,color:theme.text3}}>{diff<=0?'menys':'més'} ({Math.abs(diffPct).toFixed(0)}%)</p>
+          </div>
+          <div style={{textAlign:'right'}}><p style={{margin:'0 0 2px',fontSize:11,color:theme.text3}}>Aquest mes</p><p style={{margin:0,fontSize:20,fontWeight:700,fontFamily:'DM Mono',color:theme.text}}>{sym}{fmtN(totCur).toFixed(0)}</p></div>
+        </div>
+        {catComp.length>0&&(<div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {catComp.sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff)).map((c,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:12,color:theme.text2,flex:1}}>{c.name}</span>
+              <span style={{fontSize:11,fontFamily:'DM Mono',color:theme.text3}}>{sym}{fmtN(c.prev).toFixed(0)}</span>
+              <span style={{fontSize:10,color:theme.text3}}>→</span>
+              <span style={{fontSize:11,fontFamily:'DM Mono',color:theme.text,fontWeight:600}}>{sym}{fmtN(c.cur).toFixed(0)}</span>
+              {c.diff!==0&&<span style={{fontSize:10,fontFamily:'DM Mono',color:c.diff>0?theme.red:theme.green,minWidth:36,textAlign:'right'}}>{c.diff>0?'+':''}{sym}{fmtN(Math.abs(c.diff)).toFixed(0)}</span>}
+            </div>
+          ))}
+        </div>)}
+      </Card>)}
+        {mt.length>=2&&(<Card style={{padding:20}}><h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:theme.text}}>Evolución de Gastos</h3><div style={{paddingBottom:14,paddingTop:10}}><LineChart/></div></Card>)}
       {ct.length>0&&(<Card style={{padding:20}}><h3 style={{margin:'0 0 14px',fontSize:15,fontWeight:600,color:theme.text}}>Por Categoría</h3><div style={{height:8,borderRadius:4,overflow:'hidden',display:'flex',marginBottom:14}}>{ct.map((c,i)=><div key={i} style={{flex:c.amt,background:COLS[i%8]}}/>)}</div>{[...ct].sort((a,b)=>b.amt-a.amt).map((c,i)=>(<div key={i} style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}><div style={{width:10,height:10,borderRadius:3,background:COLS[i%8],flexShrink:0}}/><span style={{fontSize:13,color:theme.text2,flex:1}}>{c.name}</span><span style={{fontSize:13,fontFamily:'DM Mono',color:theme.text,fontWeight:500}}>{sym}{fmtN(c.amt).toFixed(0)}</span><span style={{fontSize:11,color:theme.text3,fontFamily:'DM Mono',width:34,textAlign:'right'}}>{tE>0?((c.amt/tE)*100).toFixed(0):0}%</span></div>))}</Card>)}
     </div>
   );
@@ -765,7 +867,22 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
           <div><label style={{fontSize:11,color:theme.text3,display:'block',marginBottom:4}}>Moneda</label><Sel value={nw.currency} onChange={e=>setNw({...nw,currency:e.target.value})}><option value="USD">$ USD</option><option value="GBP">£ GBP</option><option value="EUR">€ EUR</option></Sel></div>
         </div>
         <div style={{display:'flex',gap:10,marginTop:4}}>
-          <Btn onClick={()=>{if(!nw.ticker||!nw.shares||!nw.buyPrice)return;const inv={id:Date.now(),...nw,ticker:nw.ticker.toUpperCase(),shares:parseFloat(nw.shares),buyPrice:parseFloat(nw.buyPrice),invCurrency:nw.currency};uInvs([...invs,inv]);setNw({ticker:'',company:'',shares:'',buyPrice:'',buyDate:'',currency:'USD'});setShow(false);setTimeout(()=>fetchPrice(inv.ticker),300);}}>Añadir</Btn>
+          <Btn onClick={()=>{
+            if(!nw.ticker||!nw.shares||!nw.buyPrice)return;
+            const ticker=nw.ticker.toUpperCase();
+            const newBuy={shares:parseFloat(nw.shares),buyPrice:parseFloat(nw.buyPrice),buyDate:nw.buyDate,currency:nw.currency};
+            const existing=invs.find(i=>i.ticker===ticker);
+            if(existing){
+              const buys=[...(existing.buys||[{shares:existing.shares,buyPrice:existing.buyPrice,buyDate:existing.buyDate,currency:existing.invCurrency||existing.currency||'USD'}]),newBuy];
+              const totalShares=buys.reduce((s,b)=>s+b.shares,0);
+              const avgPrice=buys.reduce((s,b)=>s+b.shares*b.buyPrice,0)/totalShares;
+              uInvs(invs.map(i=>i.ticker===ticker?{...i,shares:totalShares,buyPrice:parseFloat(avgPrice.toFixed(4)),buys,company:nw.company||i.company}:i));
+            } else {
+              const inv={id:Date.now(),...nw,ticker,shares:parseFloat(nw.shares),buyPrice:parseFloat(nw.buyPrice),invCurrency:nw.currency,buys:[newBuy]};
+              uInvs([...invs,inv]);setTimeout(()=>fetchPrice(ticker),300);
+            }
+            setNw({ticker:'',company:'',shares:'',buyPrice:'',buyDate:'',currency:'USD'});setShow(false);
+          }}>Añadir</Btn>
           <BtnS onClick={()=>setShow(false)}>Cancelar</BtnS>
         </div>
       </Card>)}
@@ -783,7 +900,7 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
                 {p?.price&&<span className="tg" style={{background:pos?`${theme.green}18`:`${theme.red}18`,color:pos?theme.green:theme.red}}>{pos?'▲':'▼'}{Math.abs(p.changePct||0).toFixed(2)}%</span>}
               </div>
               <p style={{margin:0,fontSize:13,color:theme.text3}}>{inv.company}</p>
-              <p style={{margin:'2px 0 0',fontSize:11,color:theme.text3}}>{inv.buyDate} · {inv.shares} acc @ {sym2}{inv.buyPrice}</p>
+              <p style={{margin:'2px 0 0',fontSize:11,color:theme.text3}}>{inv.shares} acc · avg {sym2}{inv.buyPrice}{inv.buys&&inv.buys.length>1?` (${inv.buys.length} compres)`:''}</p>
             </div>
             <button onClick={()=>{if(confirm('¿Eliminar?'))uInvs(invs.filter(i=>i.id!==inv.id))}} style={{background:'none',border:'none',color:theme.red,cursor:'pointer',opacity:.6}}><DelIc/></button>
           </div>
