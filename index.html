@@ -318,7 +318,6 @@ const App=()=>{
           {view==='stats'&&<StatsV {...sp}/>}
           {view==='goals'&&<GoalsV {...sp}/>}
           {view==='investments'&&<InvsV {...sp}/>}
-          {view==='watchlist'&&<WatchV {...sp}/>}
           {view==='settings'&&<SettingsV {...sp}/>}
         </div>
         <BottomNav view={view} setView={setView} theme={theme}/>
@@ -791,13 +790,33 @@ const GoalsV=({goals,uGoals,accs,fmt,sym,theme})=>{
   );
 };
 
-const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
+const HORIZON_COL={llarg:'#22d3a5',mig:'#6c63ff',curt:'#f59e0b'};
+const RISK_COL={baix:'#22d3a5',mig:'#f59e0b',alt:'#ff6b6b'};
+const DEF_WATCH=[
+  {ticker:'VT',   name:'Vanguard Total World',    why:'ETF tot el món, màxima diversificació. La base de qualsevol cartera.',           horizon:'llarg',risk:'baix',cat:'ETF'},
+  {ticker:'VOO',  name:'Vanguard S&P 500',         why:'Els 500 majors dels EEUU. ~15% anual mig històric. El clàssic per llarg termini.',horizon:'llarg',risk:'baix',cat:'ETF'},
+  {ticker:'VWRL', name:'Vanguard FTSE All-World',  why:'Com VT però cotitza al LSE en £. Ideal si operes des del UK.',                  horizon:'llarg',risk:'baix',cat:'ETF'},
+  {ticker:'CSPX', name:'iShares S&P500 (LSE)',     why:'S&P500 al LSE en USD. Sense dividend, acumula automàticament.',                 horizon:'llarg',risk:'baix',cat:'ETF'},
+  {ticker:'MSFT', name:'Microsoft',                why:'IA + cloud + Office. Creixement estable, poca volatilitat per ser tech.',        horizon:'mig',  risk:'mig', cat:'Tech'},
+  {ticker:'AAPL', name:'Apple',                    why:'Ecosistema tancat, loyalitat brutal. Creix menys però molt estable.',            horizon:'mig',  risk:'baix',cat:'Tech'},
+  {ticker:'NVDA', name:'NVIDIA',                   why:'Líder en chips IA. Alta volatilitat però creixement brutal els últims anys.',    horizon:'mig',  risk:'alt', cat:'Tech'},
+  {ticker:'ASML', name:'ASML Holding',             why:'Monopoli en màquines de fabricar chips. Poca competència, molt defensiu.',      horizon:'mig',  risk:'baix',cat:'Tech'},
+  {ticker:'BRK.B',name:'Berkshire Hathaway B',     why:'Warren Buffett. Diversificació automàtica en molts sectors. Molt estable.',      horizon:'mig',  risk:'baix',cat:'Valor'},
+  {ticker:'VUSA', name:'Vanguard S&P500 (LSE £)',  why:'S&P500 en lliures. Menys exposició al canvi de divisa si cobres en £.',         horizon:'curt', risk:'baix',cat:'ETF'},
+];
+
+const InvsV=({invs,uInvs,watch,uWatch,fmt,fmtN,sym,theme})=>{
+  const [tab,setTab]=useState('portfolio'); // portfolio | watch
   const [show,setShow]=useState(false);const [nw,setNw]=useState({ticker:'',company:'',shares:'',buyPrice:'',buyDate:'',currency:'USD'});
   const [prices,setPrices]=useState({});const [ldP,setLdP]=useState({});
   const [hist,setHist]=useState({});const [ldH,setLdH]=useState({});const [range,setRange]=useState({});
+  const [expandedWatch,setExpandedWatch]=useState(null);
+  const [watchRange,setWatchRange]=useState({});
   const histCache=useRef({});
   const CACHE_MS=5*60*1000;
+
   const fetchPrice=async(ticker)=>{
+    if(ldP[ticker])return;
     setLdP(p=>({...p,[ticker]:true}));
     try{
       const url=`https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`)}`;
@@ -809,6 +828,7 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
     setLdP(p=>({...p,[ticker]:false}));
     fetchHist(ticker,'1mo');
   };
+
   const fetchHist=async(ticker,r='1mo')=>{
     const key=`${ticker}-${r}`;
     const cached=histCache.current[key];
@@ -829,15 +849,42 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
     }catch{}
     setLdH(h=>({...h,[ticker]:false}));
   };
-  useEffect(()=>{invs.forEach(i=>fetchPrice(i.ticker));},[invs.length]);
+
+  const watchItems=watch.length>0?watch:DEF_WATCH.map(w=>({...w,id:w.ticker}));
+  const ownedTickers=new Set(invs.map(i=>i.ticker));
+
+  useEffect(()=>{
+    invs.forEach(i=>fetchPrice(i.ticker));
+    if(tab==='watch')watchItems.forEach(w=>fetchPrice(w.ticker));
+  },[invs.length,tab]);
+
+  useEffect(()=>{
+    if(watch.length===0)uWatch(DEF_WATCH.map(w=>({...w,id:w.ticker,added:true})));
+  },[]);
+
   const tI=invs.reduce((s,i)=>s+i.shares*i.buyPrice,0);
   const tC=invs.reduce((s,i)=>{const p=prices[i.ticker];return s+(p?.price?p.price*i.shares:i.shares*i.buyPrice);},0);
   const tPL=tC-tI,tPLp=tI>0?(tPL/tI)*100:0;
   const RANGES=['1wk','1mo','3mo','1y'];const RLABELS={'1wk':'1S','1mo':'1M','3mo':'3M','1y':'1A'};
-  const MiniChart=({ticker,r})=>{
-    const pts=hist[`${ticker}-${r}`]||[];if(pts.length<2)return<p style={{color:theme.text3,fontSize:12,textAlign:'center',margin:'8px 0'}}>Sin datos</p>;
+
+  const MiniChart=({ticker,r,height=80})=>{
+    const pts=hist[`${ticker}-${r}`]||[];
+    if(pts.length<2){
+      return(
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,padding:'12px 0'}}>
+          <p style={{color:theme.text3,fontSize:12,margin:0}}>Sin datos para este rango</p>
+          <button onClick={()=>{
+            // Force refetch by clearing cache
+            histCache.current[`${ticker}-${r}`]=null;
+            fetchHist(ticker,r);
+          }} style={{background:'none',border:`1px solid ${theme.border}`,color:theme.accent,borderRadius:8,padding:'4px 12px',cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4,fontFamily:'DM Sans'}}>
+            <RefIc/>Reintentar
+          </button>
+        </div>
+      );
+    }
     const ps=pts.map(p=>p.p),mn=Math.min(...ps),mx=Math.max(...ps),rng=mx-mn||1;
-    const W=300,H=80,pd=8;const xs=pts.map((_,i)=>pd+(i/(pts.length-1))*(W-pd*2));const ys=pts.map(p=>H-pd-((p.p-mn)/rng)*(H-pd*2));
+    const W=300,H=height,pd=8;const xs=pts.map((_,i)=>pd+(i/(pts.length-1))*(W-pd*2));const ys=pts.map(p=>H-pd-((p.p-mn)/rng)*(H-pd*2));
     const line=xs.map((x,i)=>`${x},${ys[i]}`).join(' ');const isUp=ps[ps.length-1]>=ps[0];const col=isUp?theme.green:theme.red;
     return(<svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:'block'}}>
       <defs><linearGradient id={`hg-${ticker}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={col} stopOpacity="0.25"/><stop offset="100%" stopColor={col} stopOpacity="0"/></linearGradient></defs>
@@ -848,219 +895,173 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
       <text x={W-pd} y={H-2} textAnchor="end" fill={theme.text3} fontSize="8" fontFamily="DM Mono">{pts[pts.length-1].t.toLocaleDateString('es',{month:'short',day:'numeric'})}</text>
     </svg>);
   };
-  return(
-    <div style={{paddingTop:8,display:'flex',flexDirection:'column',gap:14}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <h2 style={{margin:0,fontSize:22,fontWeight:700,color:theme.text}}>Inversiones</h2>
-        <div style={{display:'flex',gap:8}}>
-          <button onClick={()=>invs.forEach(i=>fetchPrice(i.ticker))} style={{background:theme.bg2,border:`1px solid ${theme.border}`,color:theme.text3,borderRadius:10,padding:'10px 12px',cursor:'pointer',display:'flex',alignItems:'center'}}><RefIc/></button>
-          <Btn onClick={()=>setShow(true)} style={{width:'auto',padding:'10px 14px',display:'flex',alignItems:'center',gap:6,fontSize:13}}><PlusIc/>Añadir</Btn>
-        </div>
-      </div>
-      {invs.length>0&&(<div style={{background:theme.hero,borderRadius:20,padding:20,border:`1px solid ${theme.heroBorder}`}}>
-        <p style={{margin:'0 0 2px',fontSize:11,color:'rgba(255,255,255,.4)',textTransform:'uppercase',letterSpacing:1}}>Portfolio</p>
-        <p style={{margin:'0 0 6px',fontSize:30,fontWeight:700,fontFamily:'DM Mono',color:'#fff'}}>${tC.toFixed(2)}</p>
-        <div style={{display:'flex',gap:16}}>
-          <div><p style={{margin:'0 0 2px',fontSize:10,color:'rgba(255,255,255,.4)'}}>Invertido</p><p style={{margin:0,fontFamily:'DM Mono',fontWeight:600,color:'rgba(255,255,255,.8)',fontSize:14}}>${tI.toFixed(2)}</p></div>
-          <div><p style={{margin:'0 0 2px',fontSize:10,color:'rgba(255,255,255,.4)'}}>P&L</p><p style={{margin:0,fontFamily:'DM Mono',fontWeight:600,color:tPL>=0?theme.green:theme.red,fontSize:14}}>{tPL>=0?'+':''}{tPL.toFixed(2)} ({tPLp>=0?'+':''}{tPLp.toFixed(1)}%)</p></div>
-        </div>
-      </div>)}
-      {show&&(<Card style={{padding:20,display:'flex',flexDirection:'column',gap:12}}>
-        <h3 style={{margin:'0 0 4px',fontSize:15,fontWeight:600,color:theme.text}}>Nueva Posición</h3>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-          {[['Ticker','AAPL','ticker',true],['Empresa','Apple','company',false],['Nº acciones','10','shares',false],['Precio compra','150','buyPrice',false],['Fecha compra','Enero 2025','buyDate',false]].map(([lb,ph,k,up])=>(<div key={k}><label style={{fontSize:11,color:theme.text3,display:'block',marginBottom:4}}>{lb}</label><Inp type={k==='shares'||k==='buyPrice'?'number':'text'} inputMode={k==='shares'||k==='buyPrice'?'decimal':'text'} placeholder={ph} value={nw[k]} onChange={e=>setNw({...nw,[k]:up?e.target.value.toUpperCase():e.target.value})} style={up?{textTransform:'uppercase'}:{}}/></div>))}
-          <div><label style={{fontSize:11,color:theme.text3,display:'block',marginBottom:4}}>Moneda</label><Sel value={nw.currency} onChange={e=>setNw({...nw,currency:e.target.value})}><option value="USD">$ USD</option><option value="GBP">£ GBP</option><option value="EUR">€ EUR</option></Sel></div>
-        </div>
-        <div style={{display:'flex',gap:10,marginTop:4}}>
-          <Btn onClick={()=>{
-            if(!nw.ticker||!nw.shares||!nw.buyPrice)return;
-            const ticker=nw.ticker.toUpperCase();
-            const newBuy={shares:parseFloat(nw.shares),buyPrice:parseFloat(nw.buyPrice),buyDate:nw.buyDate,currency:nw.currency};
-            const existing=invs.find(i=>i.ticker===ticker);
-            if(existing){
-              const buys=[...(existing.buys||[{shares:existing.shares,buyPrice:existing.buyPrice,buyDate:existing.buyDate,currency:existing.invCurrency||existing.currency||'USD'}]),newBuy];
-              const totalShares=buys.reduce((s,b)=>s+b.shares,0);
-              const avgPrice=buys.reduce((s,b)=>s+b.shares*b.buyPrice,0)/totalShares;
-              uInvs(invs.map(i=>i.ticker===ticker?{...i,shares:totalShares,buyPrice:parseFloat(avgPrice.toFixed(4)),buys,company:nw.company||i.company}:i));
-            } else {
-              const inv={id:Date.now(),...nw,ticker,shares:parseFloat(nw.shares),buyPrice:parseFloat(nw.buyPrice),invCurrency:nw.currency,buys:[newBuy]};
-              uInvs([...invs,inv]);setTimeout(()=>fetchPrice(ticker),300);
-            }
-            setNw({ticker:'',company:'',shares:'',buyPrice:'',buyDate:'',currency:'USD'});setShow(false);
-          }}>Añadir</Btn>
-          <BtnS onClick={()=>setShow(false)}>Cancelar</BtnS>
-        </div>
-      </Card>)}
-      {invs.length===0&&!show&&<Card style={{padding:40,textAlign:'center'}}><p style={{fontSize:36,margin:'0 0 8px'}}>📈</p><p style={{color:theme.text3,fontSize:14,margin:0}}>Sin inversiones aún</p></Card>}
-      {invs.map(inv=>{
-        const p=prices[inv.ticker];const isLd=ldP[inv.ticker];const invested=inv.shares*inv.buyPrice;const cur=p?.price?p.price*inv.shares:null;
-        const pl=cur!=null?cur-invested:null;const plP=pl!=null?(pl/invested)*100:null;const pos=pl==null||pl>=0;
-        const selRange=range[inv.ticker]||'1mo';const s=inv.invCurrency||inv.currency||'USD';const sym2=s==='GBP'?'£':s==='EUR'?'€':'$';
-        return(<Card key={inv.id} style={{padding:20}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
-            <div>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
-                <span style={{fontSize:18,fontWeight:800,fontFamily:'DM Mono',color:theme.text}}>{inv.ticker}</span>
-                <span style={{background:theme.tag,color:theme.tagText||theme.accent,padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}>{s}</span>
-                {p?.price&&<span className="tg" style={{background:pos?`${theme.green}18`:`${theme.red}18`,color:pos?theme.green:theme.red}}>{pos?'▲':'▼'}{Math.abs(p.changePct||0).toFixed(2)}%</span>}
-              </div>
-              <p style={{margin:0,fontSize:13,color:theme.text3}}>{inv.company}</p>
-              <p style={{margin:'2px 0 0',fontSize:11,color:theme.text3}}>{inv.shares} acc · avg {sym2}{inv.buyPrice}{inv.buys&&inv.buys.length>1?` (${inv.buys.length} compres)`:''}</p>
-            </div>
-            <button onClick={()=>{if(confirm('¿Eliminar?'))uInvs(invs.filter(i=>i.id!==inv.id))}} style={{background:'none',border:'none',color:theme.red,cursor:'pointer',opacity:.6}}><DelIc/></button>
-          </div>
-          <CL style={{padding:'12px 14px',marginBottom:10}}>
-            {isLd?<div style={{display:'flex',gap:8,alignItems:'center'}}><Spin s={16} c={theme.accent}/><span style={{fontSize:12,color:theme.text3}}>Cargando...</span></div>
-            :p?.error?<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,color:theme.red}}>Error al cargar</span><button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4}}><RefIc/>Reintentar</button></div>
-            :p?.price?<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}><div><p style={{margin:'0 0 2px',fontSize:10,color:theme.text3}}>Precio actual</p><p style={{margin:0,fontSize:26,fontWeight:700,fontFamily:'DM Mono',color:theme.text}}>{sym2}{p.price?.toFixed(2)}</p></div><div style={{textAlign:'right'}}><p style={{margin:'0 0 4px',fontSize:10,color:theme.text3}}>Hoy</p><span style={{color:p.change>=0?theme.green:theme.red,fontFamily:'DM Mono',fontWeight:600,fontSize:13}}>{p.change>=0?'+':''}{sym2}{p.change?.toFixed(2)}</span></div></div>
-            :<button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4}}><RefIc/>Cargar precio</button>}
-          </CL>
-          {pl!=null&&(<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>{[['Invertido',`${sym2}${invested.toFixed(2)}`,theme.text3],['Ahora',`${sym2}${cur.toFixed(2)}`,pos?theme.green:theme.red],['P&L',`${pl>=0?'+':''}${plP.toFixed(1)}%`,pos?theme.green:theme.red]].map(([l,v,c])=>(<CL key={l} style={{padding:'8px',textAlign:'center'}}><p style={{margin:'0 0 2px',fontSize:9,color:theme.text3}}>{l}</p><p style={{margin:0,fontSize:11,fontWeight:700,fontFamily:'DM Mono',color:c}}>{v}</p></CL>))}</div>)}
-          <div>
-            <div style={{display:'flex',gap:6,marginBottom:8}}>{RANGES.map(r=>(<button key={r} onClick={()=>{setRange(x=>({...x,[inv.ticker]:r}));fetchHist(inv.ticker,r)}} style={{flex:1,padding:'6px 4px',border:`1px solid ${selRange===r?theme.accent:theme.border}`,borderRadius:8,background:selRange===r?theme.accent2:theme.bg3,color:selRange===r?theme.accent:theme.text3,cursor:'pointer',fontSize:12,fontWeight:600}}>{RLABELS[r]}</button>))}</div>
-            {ldH[inv.ticker]?<div className="sh" style={{height:80,backgroundImage:theme.shimmer}}/>:<MiniChart ticker={inv.ticker} r={selRange}/>}
-          </div>
-        </Card>);
-      })}
-    </div>
-  );
-};
 
-// ─── WATCHLIST ─────────────────────────────────────────────────────────────
-// Accions curades per perfil: risc baix, horitzó mixt, tech + índexs + ETFs
-const DEF_WATCH = [
-  // LLARG TERMINI — base sòlida (risc baix-mig)
-  {ticker:'VT',   name:'Vanguard Total World',     why:'ETF tot el món, màxima diversificació. La base de qualsevol cartera.',    horizon:'llarg', risk:'baix',  cat:'ETF'},
-  {ticker:'VOO',  name:'Vanguard S&P 500',          why:'Els 500 majors de EEUU. 15% anual mig histèric. Clàssic per llarg termini.', horizon:'llarg', risk:'baix',  cat:'ETF'},
-  {ticker:'VWRL', name:'Vanguard FTSE All-World',   why:'Com VT però cotitza a Londres en £. Ideal si operes des del UK.',          horizon:'llarg', risk:'baix',  cat:'ETF'},
-  {ticker:'CSPX', name:'iShares S&P500 (LSE)',      why:'S&P500 cotitzat al LSE en USD. Sense dividend (acumula automàtic).',       horizon:'llarg', risk:'baix',  cat:'ETF'},
-  // MIG TERMINI — creixement moderat
-  {ticker:'MSFT', name:'Microsoft',                 why:'IA + cloud + Office. Creixement estable, poca volatilitat per ser tech.',  horizon:'mig',   risk:'mig',   cat:'Tech'},
-  {ticker:'AAPL', name:'Apple',                     why:'Ecosistema tancat, loyalitat brutal. Creix menys però és molt estable.',   horizon:'mig',   risk:'baix',  cat:'Tech'},
-  {ticker:'NVDA', name:'NVIDIA',                    why:'Lider en chips IA. Alta volatilitat però creixement brutal els últims anys.', horizon:'mig', risk:'alt',   cat:'Tech'},
-  {ticker:'ASML', name:'ASML Holding',              why:'Monopoli en màquines de fabricar chips. Poca competència, molt defensiu.', horizon:'mig',   risk:'baix',  cat:'Tech'},
-  // CURT-MIG — diversificació sectorial
-  {ticker:'BRK.B',name:'Berkshire Hathaway B',      why:'Warren Buffett. Diversificació automàtica en molts sectors. Molt estable.', horizon:'mig',  risk:'baix',  cat:'Valor'},
-  {ticker:'VUSA', name:'Vanguard S&P500 (LSE £)',   why:'S&P500 en lliures. Menys exposició al canvi de divisa si cobres en £.',   horizon:'curt',  risk:'baix',  cat:'ETF'},
-];
-
-const HORIZON_COL = {llarg:'#22d3a5', mig:'#6c63ff', curt:'#f59e0b'};
-const RISK_COL = {baix:'#22d3a5', mig:'#f59e0b', alt:'#ff6b6b'};
-
-const WatchV = ({watch, uWatch, invs, theme, sym, fmtN}) => {
-  const [prices, setPrices] = useState({});
-  const [ldP, setLdP] = useState({});
-  const [filter, setFilter] = useState('tots'); // tots | llarg | mig | curt
-  const [showOwned, setShowOwned] = useState(true);
-  const histCache = useRef({});
-
-  const ownedTickers = new Set(invs.map(i => i.ticker));
-
-  // Init watch with defaults if empty
-  useEffect(() => {
-    if (watch.length === 0) uWatch(DEF_WATCH.map(w => ({...w, id: w.ticker, added: true})));
-  }, []);
-
-  const items = watch.length > 0 ? watch : DEF_WATCH.map(w => ({...w, id: w.ticker}));
-
-  useEffect(() => {
-    items.forEach(w => fetchPrice(w.ticker));
-  }, [items.length]);
-
-  const fetchPrice = async (ticker) => {
-    if (prices[ticker] || ldP[ticker]) return;
-    setLdP(p => ({...p, [ticker]: true}));
-    try {
-      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`)}`;
-      const res = await fetch(url); const json = await res.json(); const data = JSON.parse(json.contents);
-      const meta = data?.chart?.result?.[0]?.meta;
-      if (meta) {
-        const price = meta.regularMarketPrice; const prev = meta.previousClose || meta.chartPreviousClose;
-        setPrices(p => ({...p, [ticker]: {price, change: price-prev, changePct: ((price-prev)/prev)*100}}));
-      } else setPrices(p => ({...p, [ticker]: {error: true}}));
-    } catch { setPrices(p => ({...p, [ticker]: {error: true}})); }
-    setLdP(p => ({...p, [ticker]: false}));
+  // Build analyse prompt for Claude
+  const buildAnalyseUrl=()=>{
+    const portfolio=invs.length>0?`Portfolio actual: ${invs.map(i=>`${i.ticker} (${i.shares}acc @ ${i.invCurrency||'USD'}${i.buyPrice})`).join(', ')}. `:'Encara no tinc inversions. ';
+    const watchStr=`Watchlist: ${watchItems.map(w=>w.ticker).join(', ')}.`;
+    const prompt=`Hola! ${portfolio}${watchStr} El meu perfil: risc baix, interessat en ETFs + Tech + índexs globals, horitzó mixt (curt/mig/llarg termini). Busca notícies recents del mercat i diga'm: 1) quines d'aquestes accions/ETFs estan en bon moment per comprar ara, 2) si hi ha alguna que evitaria, 3) una recomanació concreta per on començar. Respon en català informal.`;
+    return `https://claude.ai/new?q=${encodeURIComponent(prompt)}`;
   };
 
-  const filtered = items.filter(w => {
-    if (!showOwned && ownedTickers.has(w.ticker)) return false;
-    if (filter === 'tots') return true;
-    return w.horizon === filter;
-  });
-
-  return (
-    <div style={{paddingTop:8, display:'flex', flexDirection:'column', gap:14}}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-        <h2 style={{margin:0, fontSize:22, fontWeight:700, color:theme.text}}>Watchlist</h2>
-        <button onClick={() => invs.forEach && items.forEach(w => fetchPrice(w.ticker))}
-          style={{background:theme.bg2, border:`1px solid ${theme.border}`, color:theme.text3, borderRadius:10, padding:'10px 12px', cursor:'pointer', display:'flex', alignItems:'center'}}>
-          <RefIc/>
-        </button>
+  return(
+    <div style={{paddingTop:8,display:'flex',flexDirection:'column',gap:14}}>
+      {/* Header + sub-tabs */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <h2 style={{margin:0,fontSize:22,fontWeight:700,color:theme.text}}>Inversiones</h2>
+        <button onClick={()=>invs.forEach(i=>fetchPrice(i.ticker))} style={{background:theme.bg2,border:`1px solid ${theme.border}`,color:theme.text3,borderRadius:10,padding:'10px 12px',cursor:'pointer',display:'flex',alignItems:'center'}}><RefIc/></button>
       </div>
 
-      {/* Info banner */}
-      <div style={{background:`${theme.accent}12`, border:`1px solid ${theme.accent}25`, borderRadius:14, padding:'12px 16px'}}>
-        <p style={{margin:'0 0 4px', fontSize:13, fontWeight:600, color:theme.accent}}>💡 Selecció per al teu perfil</p>
-        <p style={{margin:0, fontSize:12, color:theme.text3, lineHeight:1.5}}>Risc baix · Tech + ETFs + Índexs globals. Ordenats per horitzó recomanat. Recorda que no és assessorament financer.</p>
-      </div>
-
-      {/* Filters */}
-      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-        {['tots','llarg','mig','curt'].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            style={{padding:'6px 14px', borderRadius:20, border:`1px solid ${filter===f?(HORIZON_COL[f]||theme.accent):theme.border}`,
-              background: filter===f?(HORIZON_COL[f]||theme.accent)+'22':theme.bg3,
-              color: filter===f?(HORIZON_COL[f]||theme.accent):theme.text3,
-              fontSize:12, fontWeight:600, cursor:'pointer'}}>
-            {f==='tots'?'Tots':f.charAt(0).toUpperCase()+f.slice(1)+' termini'}
+      {/* Sub-tabs */}
+      <div style={{display:'flex',background:theme.bg2,borderRadius:12,padding:4,border:`1px solid ${theme.border}`,gap:4}}>
+        {[['portfolio','📈 Portfolio'],['watch','👁️ Watchlist']].map(([id,label])=>(
+          <button key={id} onClick={()=>{setTab(id);if(id==='watch')watchItems.forEach(w=>fetchPrice(w.ticker));}}
+            style={{flex:1,padding:'10px',border:'none',borderRadius:10,background:tab===id?theme.accent:'transparent',
+              color:tab===id?'#fff':theme.text3,fontWeight:600,fontSize:13,cursor:'pointer',fontFamily:'DM Sans',transition:'all .2s'}}>
+            {label}
           </button>
         ))}
-        <button onClick={() => setShowOwned(!showOwned)}
-          style={{padding:'6px 14px', borderRadius:20, border:`1px solid ${!showOwned?theme.accent:theme.border}`,
-            background: !showOwned?theme.accent2:theme.bg3,
-            color: !showOwned?theme.accent:theme.text3,
-            fontSize:12, fontWeight:600, cursor:'pointer'}}>
-          {showOwned ? 'Amagar comprats' : 'Mostrar comprats'}
-        </button>
       </div>
 
-      {/* Items */}
-      {filtered.map(w => {
-        const p = prices[w.ticker];
-        const isOwned = ownedTickers.has(w.ticker);
-        const pos = !p?.change || p.change >= 0;
-        return (
-          <Card key={w.ticker} style={{padding:18}}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10}}>
-              <div style={{flex:1}}>
-                <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:4, flexWrap:'wrap'}}>
-                  <span style={{fontSize:16, fontWeight:800, fontFamily:'DM Mono', color:theme.text}}>{w.ticker}</span>
-                  <span style={{background:`${HORIZON_COL[w.horizon]||theme.accent}20`, color:HORIZON_COL[w.horizon]||theme.accent, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>
-                    {w.horizon} termini
-                  </span>
-                  <span style={{background:`${RISK_COL[w.risk]||theme.accent}20`, color:RISK_COL[w.risk]||theme.accent, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>
-                    risc {w.risk}
-                  </span>
-                  <span style={{background:theme.bg3, color:theme.text3, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>{w.cat}</span>
-                  {isOwned && <span style={{background:`${theme.green}20`, color:theme.green, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>✓ Comprat</span>}
+      {/* ── PORTFOLIO TAB ── */}
+      {tab==='portfolio'&&(<>
+        {invs.length>0&&(<div style={{background:theme.hero,borderRadius:20,padding:20,border:`1px solid ${theme.heroBorder}`}}>
+          <p style={{margin:'0 0 2px',fontSize:11,color:'rgba(255,255,255,.4)',textTransform:'uppercase',letterSpacing:1}}>Portfolio</p>
+          <p style={{margin:'0 0 6px',fontSize:30,fontWeight:700,fontFamily:'DM Mono',color:'#fff'}}>${tC.toFixed(2)}</p>
+          <div style={{display:'flex',gap:16}}>
+            <div><p style={{margin:'0 0 2px',fontSize:10,color:'rgba(255,255,255,.4)'}}>Invertido</p><p style={{margin:0,fontFamily:'DM Mono',fontWeight:600,color:'rgba(255,255,255,.8)',fontSize:14}}>${tI.toFixed(2)}</p></div>
+            <div><p style={{margin:'0 0 2px',fontSize:10,color:'rgba(255,255,255,.4)'}}>P&L</p><p style={{margin:0,fontFamily:'DM Mono',fontWeight:600,color:tPL>=0?theme.green:theme.red,fontSize:14}}>{tPL>=0?'+':''}{tPL.toFixed(2)} ({tPLp>=0?'+':''}{tPLp.toFixed(1)}%)</p></div>
+          </div>
+        </div>)}
+        {show&&(<Card style={{padding:20,display:'flex',flexDirection:'column',gap:12}}>
+          <h3 style={{margin:'0 0 4px',fontSize:15,fontWeight:600,color:theme.text}}>Nueva Posición</h3>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {[['Ticker','AAPL','ticker',true],['Empresa','Apple','company',false],['Nº acciones','10','shares',false],['Precio compra','150','buyPrice',false],['Fecha compra','Enero 2025','buyDate',false]].map(([lb,ph,k,up])=>(<div key={k}><label style={{fontSize:11,color:theme.text3,display:'block',marginBottom:4}}>{lb}</label><Inp type={k==='shares'||k==='buyPrice'?'number':'text'} inputMode={k==='shares'||k==='buyPrice'?'decimal':'text'} placeholder={ph} value={nw[k]} onChange={e=>setNw({...nw,[k]:up?e.target.value.toUpperCase():e.target.value})} style={up?{textTransform:'uppercase'}:{}}/></div>))}
+            <div><label style={{fontSize:11,color:theme.text3,display:'block',marginBottom:4}}>Moneda</label><Sel value={nw.currency} onChange={e=>setNw({...nw,currency:e.target.value})}><option value="USD">$ USD</option><option value="GBP">£ GBP</option><option value="EUR">€ EUR</option></Sel></div>
+          </div>
+          <div style={{display:'flex',gap:10,marginTop:4}}>
+            <Btn onClick={()=>{
+              if(!nw.ticker||!nw.shares||!nw.buyPrice)return;
+              const ticker=nw.ticker.toUpperCase();
+              const newBuy={shares:parseFloat(nw.shares),buyPrice:parseFloat(nw.buyPrice),buyDate:nw.buyDate,currency:nw.currency};
+              const existing=invs.find(i=>i.ticker===ticker);
+              if(existing){
+                const buys=[...(existing.buys||[{shares:existing.shares,buyPrice:existing.buyPrice,buyDate:existing.buyDate,currency:existing.invCurrency||existing.currency||'USD'}]),newBuy];
+                const totalShares=buys.reduce((s,b)=>s+b.shares,0);
+                const avgPrice=buys.reduce((s,b)=>s+b.shares*b.buyPrice,0)/totalShares;
+                uInvs(invs.map(i=>i.ticker===ticker?{...i,shares:totalShares,buyPrice:parseFloat(avgPrice.toFixed(4)),buys,company:nw.company||i.company}:i));
+              } else {
+                const inv={id:Date.now(),...nw,ticker,shares:parseFloat(nw.shares),buyPrice:parseFloat(nw.buyPrice),invCurrency:nw.currency,buys:[newBuy]};
+                uInvs([...invs,inv]);setTimeout(()=>fetchPrice(ticker),300);
+              }
+              setNw({ticker:'',company:'',shares:'',buyPrice:'',buyDate:'',currency:'USD'});setShow(false);
+            }}>Añadir</Btn>
+            <BtnS onClick={()=>setShow(false)}>Cancelar</BtnS>
+          </div>
+        </Card>)}
+        {invs.length===0&&!show&&<Card style={{padding:40,textAlign:'center'}}>
+          <p style={{fontSize:36,margin:'0 0 8px'}}>📈</p>
+          <p style={{color:theme.text3,fontSize:14,margin:'0 0 16px'}}>Sin inversiones aún</p>
+          <Btn onClick={()=>setShow(true)} style={{width:'auto',padding:'10px 20px',margin:'0 auto',display:'flex',gap:6}}><PlusIc/>Añadir primera posición</Btn>
+        </Card>}
+        {invs.length>0&&<Btn onClick={()=>setShow(true)} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6}}><PlusIc/>Añadir posición</Btn>}
+        {invs.map(inv=>{
+          const p=prices[inv.ticker];const isLd=ldP[inv.ticker];const invested=inv.shares*inv.buyPrice;const cur=p?.price?p.price*inv.shares:null;
+          const pl=cur!=null?cur-invested:null;const plP=pl!=null?(pl/invested)*100:null;const pos=pl==null||pl>=0;
+          const selRange=range[inv.ticker]||'1mo';const s=inv.invCurrency||inv.currency||'USD';const sym2=s==='GBP'?'£':s==='EUR'?'€':'$';
+          return(<Card key={inv.id} style={{padding:20}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
+                  <span style={{fontSize:18,fontWeight:800,fontFamily:'DM Mono',color:theme.text}}>{inv.ticker}</span>
+                  <span style={{background:theme.tag,color:theme.tagText||theme.accent,padding:'2px 8px',borderRadius:12,fontSize:11,fontWeight:600}}>{s}</span>
+                  {p?.price&&<span className="tg" style={{background:pos?`${theme.green}18`:`${theme.red}18`,color:pos?theme.green:theme.red}}>{pos?'▲':'▼'}{Math.abs(p.changePct||0).toFixed(2)}%</span>}
                 </div>
-                <p style={{margin:0, fontSize:13, color:theme.text3}}>{w.name}</p>
+                <p style={{margin:0,fontSize:13,color:theme.text3}}>{inv.company}</p>
+                <p style={{margin:'2px 0 0',fontSize:11,color:theme.text3}}>{inv.shares} acc · avg {sym2}{inv.buyPrice}{inv.buys&&inv.buys.length>1?` (${inv.buys.length} compres)`:''}</p>
               </div>
-              <div style={{textAlign:'right', minWidth:80}}>
-                {ldP[w.ticker] ? <Spin s={18} c={theme.accent}/> :
-                 p?.error ? <span style={{fontSize:11, color:theme.red}}>—</span> :
-                 p?.price ? <>
-                   <p style={{margin:0, fontSize:18, fontWeight:700, fontFamily:'DM Mono', color:theme.text}}>${p.price.toFixed(2)}</p>
-                   <p style={{margin:0, fontSize:11, fontFamily:'DM Mono', color:pos?theme.green:theme.red}}>{pos?'▲':'▼'}{Math.abs(p.changePct||0).toFixed(2)}%</p>
-                 </> : null}
-              </div>
+              <button onClick={()=>{if(confirm('¿Eliminar?'))uInvs(invs.filter(i=>i.id!==inv.id))}} style={{background:'none',border:'none',color:theme.red,cursor:'pointer',opacity:.6}}><DelIc/></button>
             </div>
-            <div style={{background:theme.bg3, borderRadius:10, padding:'10px 12px', borderLeft:`3px solid ${HORIZON_COL[w.horizon]||theme.accent}`}}>
-              <p style={{margin:0, fontSize:12, color:theme.text2, lineHeight:1.5}}>{w.why}</p>
+            <CL style={{padding:'12px 14px',marginBottom:10}}>
+              {isLd?<div style={{display:'flex',gap:8,alignItems:'center'}}><Spin s={16} c={theme.accent}/><span style={{fontSize:12,color:theme.text3}}>Cargando...</span></div>
+              :p?.error?<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,color:theme.red}}>Error al cargar</span><button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4}}><RefIc/>Reintentar</button></div>
+              :p?.price?<div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}><div><p style={{margin:'0 0 2px',fontSize:10,color:theme.text3}}>Precio actual</p><p style={{margin:0,fontSize:26,fontWeight:700,fontFamily:'DM Mono',color:theme.text}}>{sym2}{p.price?.toFixed(2)}</p></div><div style={{textAlign:'right'}}><p style={{margin:'0 0 4px',fontSize:10,color:theme.text3}}>Hoy</p><span style={{color:p.change>=0?theme.green:theme.red,fontFamily:'DM Mono',fontWeight:600,fontSize:13}}>{p.change>=0?'+':''}{sym2}{p.change?.toFixed(2)}</span></div></div>
+              :<button onClick={()=>fetchPrice(inv.ticker)} style={{background:'none',border:'none',color:theme.accent,cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4}}><RefIc/>Cargar precio</button>}
+            </CL>
+            {pl!=null&&(<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>{[['Invertido',`${sym2}${invested.toFixed(2)}`,theme.text3],['Ahora',`${sym2}${cur.toFixed(2)}`,pos?theme.green:theme.red],['P&L',`${pl>=0?'+':''}${plP.toFixed(1)}%`,pos?theme.green:theme.red]].map(([l,v,c])=>(<CL key={l} style={{padding:'8px',textAlign:'center'}}><p style={{margin:'0 0 2px',fontSize:9,color:theme.text3}}>{l}</p><p style={{margin:0,fontSize:11,fontWeight:700,fontFamily:'DM Mono',color:c}}>{v}</p></CL>))}</div>)}
+            <div>
+              <div style={{display:'flex',gap:6,marginBottom:8}}>{RANGES.map(r=>(<button key={r} onClick={()=>{setRange(x=>({...x,[inv.ticker]:r}));fetchHist(inv.ticker,r)}} style={{flex:1,padding:'6px 4px',border:`1px solid ${selRange===r?theme.accent:theme.border}`,borderRadius:8,background:selRange===r?theme.accent2:theme.bg3,color:selRange===r?theme.accent:theme.text3,cursor:'pointer',fontSize:12,fontWeight:600}}>{RLABELS[r]}</button>))}</div>
+              {ldH[inv.ticker]?<div className="sh" style={{height:80,backgroundImage:theme.shimmer}}/>:<MiniChart ticker={inv.ticker} r={selRange}/>}
             </div>
-          </Card>
-        );
-      })}
+          </Card>);
+        })}
+      </>)}
+
+      {/* ── WATCHLIST TAB ── */}
+      {tab==='watch'&&(<>
+        {/* Analyse button */}
+        <a href={buildAnalyseUrl()} target="_blank" rel="noopener"
+          style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'13px',background:`linear-gradient(135deg,${theme.accent},${theme.green}88)`,borderRadius:14,border:'none',cursor:'pointer',textDecoration:'none',color:'#fff',fontWeight:700,fontSize:14,fontFamily:'DM Sans'}}>
+          <StarIc/>Analitza el mercat ara amb Claude
+        </a>
+        <div style={{background:`${theme.accent}10`,border:`1px solid ${theme.accent}20`,borderRadius:12,padding:'10px 14px'}}>
+          <p style={{margin:0,fontSize:12,color:theme.text3,lineHeight:1.5}}>💡 Selecció per al teu perfil: risc baix · ETFs + Tech + Índexs. Clica qualsevol per veure el gràfic. No és assessorament financer.</p>
+        </div>
+        {watchItems.map(w=>{
+          const p=prices[w.ticker];const isOwned=ownedTickers.has(w.ticker);
+          const pos=!p?.change||p.change>=0;const isExp=expandedWatch===w.ticker;
+          const selR=watchRange[w.ticker]||'1mo';
+          return(
+            <Card key={w.ticker} style={{padding:0,overflow:'hidden'}}>
+              {/* Clickable header */}
+              <button onClick={()=>{
+                const next=isExp?null:w.ticker;
+                setExpandedWatch(next);
+                if(next)fetchHist(w.ticker,selR);
+              }} style={{width:'100%',background:'none',border:'none',cursor:'pointer',padding:18,textAlign:'left'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  <div style={{flex:1}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:5,flexWrap:'wrap'}}>
+                      <span style={{fontSize:16,fontWeight:800,fontFamily:'DM Mono',color:theme.text}}>{w.ticker}</span>
+                      <span style={{background:`${HORIZON_COL[w.horizon]||theme.accent}22`,color:HORIZON_COL[w.horizon]||theme.accent,padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:600}}>{w.horizon}</span>
+                      <span style={{background:`${RISK_COL[w.risk]||theme.accent}22`,color:RISK_COL[w.risk]||theme.accent,padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:600}}>risc {w.risk}</span>
+                      <span style={{background:theme.bg3,color:theme.text3,padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:500}}>{w.cat}</span>
+                      {isOwned&&<span style={{background:`${theme.green}22`,color:theme.green,padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:600}}>✓ Comprat</span>}
+                    </div>
+                    <p style={{margin:0,fontSize:12,color:theme.text3}}>{w.name}</p>
+                  </div>
+                  <div style={{textAlign:'right',minWidth:80,marginLeft:10}}>
+                    {ldP[w.ticker]?<Spin s={16} c={theme.accent}/>
+                    :p?.error?<span style={{fontSize:11,color:theme.red}}>—</span>
+                    :p?.price?<>
+                      <p style={{margin:0,fontSize:17,fontWeight:700,fontFamily:'DM Mono',color:theme.text}}>${p.price.toFixed(2)}</p>
+                      <p style={{margin:0,fontSize:11,fontFamily:'DM Mono',color:pos?theme.green:theme.red}}>{pos?'▲':'▼'}{Math.abs(p.changePct||0).toFixed(2)}%</p>
+                    </>:null}
+                  </div>
+                </div>
+              </button>
+
+              {/* Expanded: why + chart */}
+              {isExp&&(
+                <div style={{borderTop:`1px solid ${theme.border}`,padding:'14px 18px 18px'}}>
+                  <div style={{background:theme.bg3,borderRadius:10,padding:'10px 14px',borderLeft:`3px solid ${HORIZON_COL[w.horizon]||theme.accent}`,marginBottom:14}}>
+                    <p style={{margin:0,fontSize:12,color:theme.text2,lineHeight:1.6}}>{w.why}</p>
+                  </div>
+                  <div style={{display:'flex',gap:6,marginBottom:10}}>
+                    {RANGES.map(r=>(
+                      <button key={r} onClick={()=>{setWatchRange(x=>({...x,[w.ticker]:r}));fetchHist(w.ticker,r)}}
+                        style={{flex:1,padding:'6px 4px',border:`1px solid ${selR===r?theme.accent:theme.border}`,borderRadius:8,background:selR===r?theme.accent2:theme.bg3,color:selR===r?theme.accent:theme.text3,cursor:'pointer',fontSize:12,fontWeight:600}}>
+                        {RLABELS[r]}
+                      </button>
+                    ))}
+                  </div>
+                  {ldH[w.ticker]?<div className="sh" style={{height:80,backgroundImage:theme.shimmer}}/>:<MiniChart ticker={w.ticker} r={selR}/>}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </>)}
     </div>
   );
 };
@@ -1099,7 +1100,7 @@ const SettingsV=({themeName,uTheme,currency,uCurrency,exRate,uExRate,theme})=>{
 };
 
 const BottomNav=({view,setView,theme})=>{
-  const tabs=[{id:'home',label:'Inicio',icon:<HomeIc/>},{id:'accounts',label:'Cuentas',icon:<WalIc/>},{id:'expenses',label:'Gastos',icon:<TrIc/>},{id:'investments',label:'Bolsa',icon:<InvIc/>},{id:'watchlist',label:'Watch',icon:<EyeIc/>},{id:'goals',label:'Metas',icon:<TgIc/>}];
+  const tabs=[{id:'home',label:'Inicio',icon:<HomeIc/>},{id:'accounts',label:'Cuentas',icon:<WalIc/>},{id:'expenses',label:'Gastos',icon:<TrIc/>},{id:'investments',label:'Bolsa',icon:<InvIc/>},{id:'goals',label:'Metas',icon:<TgIc/>},{id:'settings',label:'Ajustes',icon:<SetIc/>}];
   const on=id=>view===id||(id==='home'&&view==='addSaving')||(id==='watchlist'&&view==='watchlist');
   return(<div style={{position:'fixed',bottom:0,left:0,right:0,background:theme.navBg,backdropFilter:'blur(20px)',borderTop:`1px solid ${theme.border}`,padding:'6px 2px',zIndex:100}}>
     <div style={{display:'flex',justifyContent:'space-around',maxWidth:480,margin:'0 auto'}}>
