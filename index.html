@@ -106,6 +106,7 @@ const HomeIc=()=><Ic d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2
 const WalIc=()=><Ic d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>;
 const TrIc=()=><Ic d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>;
 const TgIc=()=><Ic d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>;
+const EyeIc=()=><Ic d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>;
 const InvIc=()=><Ic d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>;
 const SetIc=()=><Ic d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>;
 const PlusIc=()=><Ic d="M12 4v16m8-8H4" s={18}/>;
@@ -228,7 +229,8 @@ const App=()=>{
   const [invs,setInvs]=useState([]);
   const [mlist,setMlist]=useState(genMonths());
   const [showQuick,setShowQuick]=useState(false);
-  const [income,setIncome]=useState({});// {monthKey: amountGBP}
+  const [income,setIncome]=useState({});
+  const [watch,setWatch]=useState([]);
 
   useEffect(()=>{
     if(!window._onAuth)return;
@@ -260,6 +262,7 @@ const App=()=>{
         if(e&&Array.isArray(e))setExps(e);
         if(g&&Array.isArray(g))setGoals(g);
         if(iv&&Array.isArray(iv))setInvs(iv);
+        const wl=await dbLoad(uid,'watch',[]);if(Array.isArray(wl))setWatch(wl);
         if(ml&&Array.isArray(ml)&&ml.length>0)setMlist(ml);
         const incomeData=await dbLoad(uid,'income',{});if(incomeData&&typeof incomeData==='object')setIncome(incomeData);
         if(tn&&typeof tn==='string')setThemeName(tn);
@@ -281,6 +284,7 @@ const App=()=>{
   const uExps=v=>{setExps(v);save('exps',v)};
   const uGoals=v=>{setGoals(v);save('goals',v)};
   const uInvs=v=>{setInvs(v);save('invs',v)};
+  const uWatch=v=>{setWatch(v);save('watch',v)};
   const uIncome=v=>{setIncome(v);save('income',v)};
   const uMlist=v=>{setMlist(v);save('mlist',v)};
   const uTheme=v=>{setThemeName(v);save('theme',v)};
@@ -297,7 +301,7 @@ const App=()=>{
   if(!user)return<Login/>;
   if(ld)return<div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,background:theme.bg}}><Spin c={theme.accent}/><p style={{color:theme.text3,fontSize:14,margin:0}}>Cargando tus datos...</p></div>;
 
-  const sp={theme,dist,uDist,accs,uAccs,savs,uSavs,cats,uCats,exps,uExps,goals,uGoals,invs,uInvs,mlist,uMlist,totBal,totSav,setView,fmt,fmtN,sym,toGBP,currency,uCurrency,exRate,uExRate,themeName,uTheme,income,uIncome};
+  const sp={theme,dist,uDist,accs,uAccs,savs,uSavs,cats,uCats,exps,uExps,goals,uGoals,invs,uInvs,mlist,uMlist,totBal,totSav,setView,fmt,fmtN,sym,toGBP,currency,uCurrency,exRate,uExRate,themeName,uTheme,income,uIncome,watch,uWatch};
   return(
     <ThemeCtx.Provider value={{theme,themeName}}>
       <div style={{minHeight:'100vh',background:theme.bg,paddingBottom:88}}>
@@ -314,6 +318,7 @@ const App=()=>{
           {view==='stats'&&<StatsV {...sp}/>}
           {view==='goals'&&<GoalsV {...sp}/>}
           {view==='investments'&&<InvsV {...sp}/>}
+          {view==='watchlist'&&<WatchV {...sp}/>}
           {view==='settings'&&<SettingsV {...sp}/>}
         </div>
         <BottomNav view={view} setView={setView} theme={theme}/>
@@ -921,6 +926,145 @@ const InvsV=({invs,uInvs,fmt,fmtN,sym,theme})=>{
   );
 };
 
+// ─── WATCHLIST ─────────────────────────────────────────────────────────────
+// Accions curades per perfil: risc baix, horitzó mixt, tech + índexs + ETFs
+const DEF_WATCH = [
+  // LLARG TERMINI — base sòlida (risc baix-mig)
+  {ticker:'VT',   name:'Vanguard Total World',     why:'ETF tot el món, màxima diversificació. La base de qualsevol cartera.',    horizon:'llarg', risk:'baix',  cat:'ETF'},
+  {ticker:'VOO',  name:'Vanguard S&P 500',          why:'Els 500 majors de EEUU. 15% anual mig histèric. Clàssic per llarg termini.', horizon:'llarg', risk:'baix',  cat:'ETF'},
+  {ticker:'VWRL', name:'Vanguard FTSE All-World',   why:'Com VT però cotitza a Londres en £. Ideal si operes des del UK.',          horizon:'llarg', risk:'baix',  cat:'ETF'},
+  {ticker:'CSPX', name:'iShares S&P500 (LSE)',      why:'S&P500 cotitzat al LSE en USD. Sense dividend (acumula automàtic).',       horizon:'llarg', risk:'baix',  cat:'ETF'},
+  // MIG TERMINI — creixement moderat
+  {ticker:'MSFT', name:'Microsoft',                 why:'IA + cloud + Office. Creixement estable, poca volatilitat per ser tech.',  horizon:'mig',   risk:'mig',   cat:'Tech'},
+  {ticker:'AAPL', name:'Apple',                     why:'Ecosistema tancat, loyalitat brutal. Creix menys però és molt estable.',   horizon:'mig',   risk:'baix',  cat:'Tech'},
+  {ticker:'NVDA', name:'NVIDIA',                    why:'Lider en chips IA. Alta volatilitat però creixement brutal els últims anys.', horizon:'mig', risk:'alt',   cat:'Tech'},
+  {ticker:'ASML', name:'ASML Holding',              why:'Monopoli en màquines de fabricar chips. Poca competència, molt defensiu.', horizon:'mig',   risk:'baix',  cat:'Tech'},
+  // CURT-MIG — diversificació sectorial
+  {ticker:'BRK.B',name:'Berkshire Hathaway B',      why:'Warren Buffett. Diversificació automàtica en molts sectors. Molt estable.', horizon:'mig',  risk:'baix',  cat:'Valor'},
+  {ticker:'VUSA', name:'Vanguard S&P500 (LSE £)',   why:'S&P500 en lliures. Menys exposició al canvi de divisa si cobres en £.',   horizon:'curt',  risk:'baix',  cat:'ETF'},
+];
+
+const HORIZON_COL = {llarg:'#22d3a5', mig:'#6c63ff', curt:'#f59e0b'};
+const RISK_COL = {baix:'#22d3a5', mig:'#f59e0b', alt:'#ff6b6b'};
+
+const WatchV = ({watch, uWatch, invs, theme, sym, fmtN}) => {
+  const [prices, setPrices] = useState({});
+  const [ldP, setLdP] = useState({});
+  const [filter, setFilter] = useState('tots'); // tots | llarg | mig | curt
+  const [showOwned, setShowOwned] = useState(true);
+  const histCache = useRef({});
+
+  const ownedTickers = new Set(invs.map(i => i.ticker));
+
+  // Init watch with defaults if empty
+  useEffect(() => {
+    if (watch.length === 0) uWatch(DEF_WATCH.map(w => ({...w, id: w.ticker, added: true})));
+  }, []);
+
+  const items = watch.length > 0 ? watch : DEF_WATCH.map(w => ({...w, id: w.ticker}));
+
+  useEffect(() => {
+    items.forEach(w => fetchPrice(w.ticker));
+  }, [items.length]);
+
+  const fetchPrice = async (ticker) => {
+    if (prices[ticker] || ldP[ticker]) return;
+    setLdP(p => ({...p, [ticker]: true}));
+    try {
+      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`)}`;
+      const res = await fetch(url); const json = await res.json(); const data = JSON.parse(json.contents);
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (meta) {
+        const price = meta.regularMarketPrice; const prev = meta.previousClose || meta.chartPreviousClose;
+        setPrices(p => ({...p, [ticker]: {price, change: price-prev, changePct: ((price-prev)/prev)*100}}));
+      } else setPrices(p => ({...p, [ticker]: {error: true}}));
+    } catch { setPrices(p => ({...p, [ticker]: {error: true}})); }
+    setLdP(p => ({...p, [ticker]: false}));
+  };
+
+  const filtered = items.filter(w => {
+    if (!showOwned && ownedTickers.has(w.ticker)) return false;
+    if (filter === 'tots') return true;
+    return w.horizon === filter;
+  });
+
+  return (
+    <div style={{paddingTop:8, display:'flex', flexDirection:'column', gap:14}}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+        <h2 style={{margin:0, fontSize:22, fontWeight:700, color:theme.text}}>Watchlist</h2>
+        <button onClick={() => invs.forEach && items.forEach(w => fetchPrice(w.ticker))}
+          style={{background:theme.bg2, border:`1px solid ${theme.border}`, color:theme.text3, borderRadius:10, padding:'10px 12px', cursor:'pointer', display:'flex', alignItems:'center'}}>
+          <RefIc/>
+        </button>
+      </div>
+
+      {/* Info banner */}
+      <div style={{background:`${theme.accent}12`, border:`1px solid ${theme.accent}25`, borderRadius:14, padding:'12px 16px'}}>
+        <p style={{margin:'0 0 4px', fontSize:13, fontWeight:600, color:theme.accent}}>💡 Selecció per al teu perfil</p>
+        <p style={{margin:0, fontSize:12, color:theme.text3, lineHeight:1.5}}>Risc baix · Tech + ETFs + Índexs globals. Ordenats per horitzó recomanat. Recorda que no és assessorament financer.</p>
+      </div>
+
+      {/* Filters */}
+      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+        {['tots','llarg','mig','curt'].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            style={{padding:'6px 14px', borderRadius:20, border:`1px solid ${filter===f?(HORIZON_COL[f]||theme.accent):theme.border}`,
+              background: filter===f?(HORIZON_COL[f]||theme.accent)+'22':theme.bg3,
+              color: filter===f?(HORIZON_COL[f]||theme.accent):theme.text3,
+              fontSize:12, fontWeight:600, cursor:'pointer'}}>
+            {f==='tots'?'Tots':f.charAt(0).toUpperCase()+f.slice(1)+' termini'}
+          </button>
+        ))}
+        <button onClick={() => setShowOwned(!showOwned)}
+          style={{padding:'6px 14px', borderRadius:20, border:`1px solid ${!showOwned?theme.accent:theme.border}`,
+            background: !showOwned?theme.accent2:theme.bg3,
+            color: !showOwned?theme.accent:theme.text3,
+            fontSize:12, fontWeight:600, cursor:'pointer'}}>
+          {showOwned ? 'Amagar comprats' : 'Mostrar comprats'}
+        </button>
+      </div>
+
+      {/* Items */}
+      {filtered.map(w => {
+        const p = prices[w.ticker];
+        const isOwned = ownedTickers.has(w.ticker);
+        const pos = !p?.change || p.change >= 0;
+        return (
+          <Card key={w.ticker} style={{padding:18}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:4, flexWrap:'wrap'}}>
+                  <span style={{fontSize:16, fontWeight:800, fontFamily:'DM Mono', color:theme.text}}>{w.ticker}</span>
+                  <span style={{background:`${HORIZON_COL[w.horizon]||theme.accent}20`, color:HORIZON_COL[w.horizon]||theme.accent, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>
+                    {w.horizon} termini
+                  </span>
+                  <span style={{background:`${RISK_COL[w.risk]||theme.accent}20`, color:RISK_COL[w.risk]||theme.accent, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>
+                    risc {w.risk}
+                  </span>
+                  <span style={{background:theme.bg3, color:theme.text3, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>{w.cat}</span>
+                  {isOwned && <span style={{background:`${theme.green}20`, color:theme.green, padding:'2px 8px', borderRadius:10, fontSize:10, fontWeight:600}}>✓ Comprat</span>}
+                </div>
+                <p style={{margin:0, fontSize:13, color:theme.text3}}>{w.name}</p>
+              </div>
+              <div style={{textAlign:'right', minWidth:80}}>
+                {ldP[w.ticker] ? <Spin s={18} c={theme.accent}/> :
+                 p?.error ? <span style={{fontSize:11, color:theme.red}}>—</span> :
+                 p?.price ? <>
+                   <p style={{margin:0, fontSize:18, fontWeight:700, fontFamily:'DM Mono', color:theme.text}}>${p.price.toFixed(2)}</p>
+                   <p style={{margin:0, fontSize:11, fontFamily:'DM Mono', color:pos?theme.green:theme.red}}>{pos?'▲':'▼'}{Math.abs(p.changePct||0).toFixed(2)}%</p>
+                 </> : null}
+              </div>
+            </div>
+            <div style={{background:theme.bg3, borderRadius:10, padding:'10px 12px', borderLeft:`3px solid ${HORIZON_COL[w.horizon]||theme.accent}`}}>
+              <p style={{margin:0, fontSize:12, color:theme.text2, lineHeight:1.5}}>{w.why}</p>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+};
+
 const SettingsV=({themeName,uTheme,currency,uCurrency,exRate,uExRate,theme})=>{
   const [tmpRate,setTmpRate]=useState(exRate.toString());
   return(
@@ -955,8 +1099,8 @@ const SettingsV=({themeName,uTheme,currency,uCurrency,exRate,uExRate,theme})=>{
 };
 
 const BottomNav=({view,setView,theme})=>{
-  const tabs=[{id:'home',label:'Inicio',icon:<HomeIc/>},{id:'accounts',label:'Cuentas',icon:<WalIc/>},{id:'expenses',label:'Gastos',icon:<TrIc/>},{id:'investments',label:'Bolsa',icon:<InvIc/>},{id:'goals',label:'Metas',icon:<TgIc/>},{id:'settings',label:'Ajustes',icon:<SetIc/>}];
-  const on=id=>view===id||(id==='home'&&view==='addSaving');
+  const tabs=[{id:'home',label:'Inicio',icon:<HomeIc/>},{id:'accounts',label:'Cuentas',icon:<WalIc/>},{id:'expenses',label:'Gastos',icon:<TrIc/>},{id:'investments',label:'Bolsa',icon:<InvIc/>},{id:'watchlist',label:'Watch',icon:<EyeIc/>},{id:'goals',label:'Metas',icon:<TgIc/>}];
+  const on=id=>view===id||(id==='home'&&view==='addSaving')||(id==='watchlist'&&view==='watchlist');
   return(<div style={{position:'fixed',bottom:0,left:0,right:0,background:theme.navBg,backdropFilter:'blur(20px)',borderTop:`1px solid ${theme.border}`,padding:'6px 2px',zIndex:100}}>
     <div style={{display:'flex',justifyContent:'space-around',maxWidth:480,margin:'0 auto'}}>
       {tabs.map(t=>(<button key={t.id} onClick={()=>setView(t.id)} className="nb" style={{color:on(t.id)?theme.accent:theme.text3}}>{t.icon}<span>{t.label}</span></button>))}
